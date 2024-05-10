@@ -17,7 +17,7 @@ In the current implementation, the "async" nature of code is determined from the
 - etc.
 
 
-### The issue with coroutines/threads
+### The issue with threads
 
 In this type of implementation, async behavior is determined from the top down, allowing high-level code or end users to decide which code will run asynchronously. This approach makes more sense; however, a problem arises when the underlying code relies solely on blocking I/O and does not utilize the system events scheduler efficiently. This inefficient approach leads to the spawning of numerous threads for each blocking operation, resulting in high costs and limitations.
 
@@ -31,7 +31,7 @@ In my opinion, a good async API should :
 - Be simple, concise, and resemble synchronous code.
 - Allow easy integration with synchronous code.
 
-To achieve this, I propose utilizing two distinct threads: one for synchronous tasks and another for asynchronous tasks, representing them as colored threads rather than functions. The synchronous thread, when performing I/O operations directly, will solely employ blocking code or leverage the capabilities of the asynchronous thread. On the other hand, the asynchronous thread will handle I/O operations through an event loop. This clear differentiation ensures that there will be no function coloring within either thread.
+To achieve this, I propose utilizing coroutines power associated with an event loop inside a single thread. This clear differentiation ensures that there will be no function coloring within either thread.
 
 This transition can be triggered using a keyword in the synchronous thread: **goAsync**.
 
@@ -54,8 +54,7 @@ proc read(file: File, count: int) =
 
 ## Roadmap
 
-1. Implement an event loop.
-2. Implement a way to "suspendAndPoll" procs inside the asynchronous thread (considered a crucial aspect).
+1. Implements the coroutine API and the appropriate event loop
 3. Implement the ioselectors and synchronous operations.
 4. Implement the *goAsync* template to spawn a proc inside the asynchronous thread.
 5. Introduce a *Task[T]* type as the return type of *goAsync* using channels, which can be awaited in a blocking manner using the *wait* keyword.
