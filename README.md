@@ -24,8 +24,6 @@ This repository is currently in the ideation phase, and no alpha release is expe
 
 ### Compared to sync operations:
 
-The possibility to run concurrent code:
-
 - **Advantages**:
   - The possibility to run concurrent code:
     - faster for sending multiple I/O requests
