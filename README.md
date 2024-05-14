@@ -40,7 +40,7 @@ _The advantages and drawbacks are similar than comparing async/await with thread
   - lightweigth on memory
   - faster for I/O
 - **Drawbacks**:
-  - Code is not running parellelly (Doesn't answer necesarly the same problematics)
+  - Code is not running parellelly (Doesn't answer necessarly the same problematics)
   - No speed gain for CPU operations (instead added overhead)
 
 ### Compared to async/await
@@ -68,7 +68,7 @@ _having few knowledge of CPS, please take my assumptions with a grain of salt_
   - Simpler to use
 - **Drawbacks**:
   - _Same drawbacks as compared to async/await_
-  - Doesn't answer necesarly the same problematics
+  - Doesn't answer necessarly the same problematics
   - Can't be moved between threads
 
 ## Example
