@@ -33,7 +33,7 @@ This repository is currently in the ideation phase, and no alpha release is expe
   - usage of more memory -> to estimate, but maybe 4 KB (using virtual memory) to 56 kB (using physical memory) by active I/O waiting operation
 
 ### Compared to threads
-_Same advantages and drawbacks than async/await_
+_The advantages and drawbacks are similar than comparing async/await with threads_
 
 - **Advantages**:
   - easyness to pass data
