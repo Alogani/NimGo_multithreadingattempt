@@ -6,7 +6,7 @@
 # Choice has been made to rely on minicoroutines for numerous reasons (efficient, single file, clear API, cross platform, virtual memory, etc.)
 # Inspired freely from https://git.envs.net/iacore/minicoro-nim
 
-var IncludeBuilder {.compileTime.} = "/*INCLUDESECTION*/" # Ok, that's an awful hack
+var IncludeBuilder {.compileTime.} = "/*INCLUDESECTION*/" # Ok, that's an awful hack. Using passC could be another solution
 
 when not defined(gcArc) and not defined(gcOrc):
     {.warning: "coroutines is not tested without --mm:orc or --mm:arc".}
@@ -92,13 +92,12 @@ type
         CsDead ## Finished with an error
     
     EntryFn[T] = proc(): T
-        ## Supportsat least closure and nimcall calling convention
+        ## Supports at least closure and nimcall calling convention
 
     CoroutineBase = ref object of RootRef
         # During execution, we don't know the real type
         mcoCoroutine: ptr McoCoroutine
         exception: ref Exception
-        memory: seq[pointer]
 
     Coroutine*[T] = ref object of CoroutineBase
         # To ensure type and GC safety at the beginning and end of execution
