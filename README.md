@@ -49,7 +49,7 @@ _The advantages and drawbacks are similar than comparing async/await with thread
 
 - **Advantages**:
   - easiness to pass data
-  - lightweigth on memory
+  - much more lightweight on memory, no OS limitations on the "spawning" count
   - faster for I/O
 - **Drawbacks**:
   - Code is not running parellelly (Doesn't answer necessarly the same problematics)
