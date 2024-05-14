@@ -36,7 +36,7 @@ This repository is currently in the ideation phase, and no alpha release is expe
 _The advantages and drawbacks are similar than comparing async/await with threads_
 
 - **Advantages**:
-  - easyness to pass data
+  - easiness to pass data
   - lightweigth on memory
   - faster for I/O
 - **Drawbacks**:
