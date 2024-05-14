@@ -1,12 +1,12 @@
 # goAsync
 
-_go-like Asyncio for the nim language_
+_NimGo: Asynchronous Library Inspired by Go's Asyncio. Or for Purists: Stackful Coroutines library associated with an I/O Pollable Event Loop and Dispatcher_
 
 This repository is currently in the ideation phase, and no alpha release is expected in the near future.
 
 ## Roadmap
 
-- [X] Implements the stackfull coroutine API
+- [X] Implements the stackful coroutine API
 - [ ] Implements the Event loop API in the same thread
 - [ ] Implements the possibility to run the Event loop in a second thread
 - [ ] Implements the sync I/O operations for files
@@ -19,8 +19,9 @@ This repository is currently in the ideation phase, and no alpha release is expe
  - `proc waitAll[T](task: seq[Task[T]]): seq[T]`
  - `proc waitAny[T](task: seq[Task[T]])`
  - etc. ?
+- [ ] See if *Task[T]* can be converted to *Future[T]* from std/asyncdispatch to allow user to use both paradigm
 
-## Comparisons with alternatives I/O handling
+## Comparisons with alternatives I/O handling paradigm
 
 ### Compared to sync operations:
 
@@ -54,7 +55,7 @@ _The advantages and drawbacks are similar than comparing async/await with thread
   - An overall simpler implementation (current async/await implementation in nim still suffers from memory leaks and inefficiencies)
   - Slighlty faster (because Future[T] doesn't need to be passed each time anymore) -> to confirm
 - **Drawbacks**:
-    - More memory is consumed by I/O operations, but compensated by the fact that:
+    - More memory is consumed by I/O operations, but slighlty compensated by the fact that:
         - data doesn't need anymore to be encapsulated in a Future[T] object
         - virtual memory can be used
     - The end user doesn't know anymore if data inside the library is async or not
@@ -74,7 +75,7 @@ _having few knowledge of CPS, please take my assumptions with a grain of salt_
 ## Example
 _The exact and definitive API is susceptible to change_
 ```
-import goasynclib
+import nimgo
 
 proc main()
 proc read(file: File, count: int)
