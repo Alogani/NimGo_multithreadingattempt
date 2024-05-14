@@ -66,10 +66,12 @@ _The advantages and drawbacks are similar than comparing async/await with thread
   - An overall simpler implementation (current async/await implementation in nim still suffers from memory leaks and inefficiencies)
   - Slighlty faster (because Future[T] doesn't need to be passed each time anymore) -> to confirm
 - **Drawbacks**:
-    - More memory is consumed by I/O operations, but slighlty compensated by the fact that:
-        - data doesn't need anymore to be encapsulated in a Future[T] object
-        - virtual memory can be used
-    - The end user doesn't know anymore if data inside the library is async or not
+    - More memory is consumed by I/O operations:
+        - this can made it less suitable for very high demanding servers (hundreds of thousands of connections, see comparisons between go and rust)
+        - The higher memory consumption has to be relativised because :
+            - data doesn't need anymore to be encapsulated in a Future[T] object which is passed around
+            - virtual memory can be used
+    - The async nature of I/O operation is not explicit anymore
     - The end user can't control as much the flow of operations
 
 ### Compared to CPS (continuation passing style)
