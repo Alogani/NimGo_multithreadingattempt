@@ -71,6 +71,7 @@ _The advantages and drawbacks are similar than comparing async/await with thread
         - The higher memory consumption has to be relativised because :
             - data doesn't need anymore to be encapsulated in a Future[T] object which is passed around
             - virtual memory can be used
+            - for most usages, the difference of memory usage should be barely noticeable (-> to determine: a thresold where it can be noticeable)
     - The async nature of I/O operation is not explicit anymore
     - The end user can't control as much the flow of operations
 
