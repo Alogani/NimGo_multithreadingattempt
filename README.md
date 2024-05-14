@@ -1,8 +1,15 @@
-# goAsync
+# NimGo
 
 _NimGo: Asynchronous Library Inspired by Go's Asyncio. Or for Purists: Stackful Coroutines library associated with an I/O Pollable Event Loop and Dispatcher_
 
 This repository is currently in the ideation phase, and no alpha release is expected in the near future.
+
+## Goal
+Provide a simple, concise and efficient library for I/O.
+
+No async/await, no pragma, no Future[T] everywhere !
+
+Only one word to remember : **goAsync** (and optionaly **wait**, but seriously who needs that ?)
 
 ## Roadmap
 
