@@ -26,6 +26,10 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
  - `proc waitAll[T](task: seq[Task[T]]): seq[T]`
  - `proc waitAny[T](task: seq[Task[T]])`
  - etc. ?
+- [ ] Implements the sync I/O operations for timers/process/events/signals
+- [ ] Implements the async I/O operations for timers/process/events/signals
+- [ ] Implements the sync I/O operations for sockets
+- [ ] Implements the async I/O operations for sockets
 - [ ] See if *Task[T]* can be converted to *Future[T]* from std/asyncdispatch to allow user to use both paradigm
 
 ## Comparisons with alternatives I/O handling paradigm
