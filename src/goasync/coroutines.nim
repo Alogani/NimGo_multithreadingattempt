@@ -77,8 +77,7 @@ proc prettyError(returnCode: McoReturnCode): cstring_const {.importc: "mco_resul
 
 proc checkMcoReturnCode(returnCode: McoReturnCode) =
     if returnCode != Success:
-        var MYVAR = returnCode.prettyError()
-        raise newException(CoroutineError, $MYVAR)
+        raise newException(CoroutineError, $returnCode.prettyError())
 
 
 #[ ********* API ********* ]#

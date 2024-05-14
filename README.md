@@ -91,39 +91,39 @@ _The exact and definitive API is susceptible to change_
 ```
 import nimgo
 
-proc main()
-proc read(file: File, count: int)
+## # Basic I/O
+proc readAndPrint(file: AsyncFile) =
+    var data: string
+    ## Async depending on the context:
+    ##  - If readAndPrint or any function calling readAndPrint has been called with *goAsync*
+    ##      then the read is async, and function will be paused until readAll return.
+    ##      This will give control back to one of the function that used goAsync and allow execution of other functions
+    ##  - If goAsync was not used in one of the callee, the read is done in a sync way, blocking main thread
+    data = file.readAll()
+    ## Always sync, no matter the context
+    data = file.readAllSync()
+    ## Always async, no matter the context
+    data = file.readAllAsync()
+    data = wait goAsync file.readAll()
 
-## Example 1
-var task = goAsync main(id = 1) # main is scheduled to be executed. It won't run necessarly immediatly. It will be executed in async context, meaning all I/O operations will be done in a async way (using epoll/select, etc, it won't spawn threads)/
-main(id = 2) # main will be executed inside an non-async context (all I/O operations will be sync UNLESS goAsync is explictly used inside main)
-wait task
 
-## Example 2
-when not defined(spawnGoAsyncThread):
-  goAsync main(id = 1)
-  main(id = 2) ## Here main(id = 2) is guaranted to be executed before main(id = 1)
-  runEventloop() ## This call is necessary, otherwise main(id = 1) will never be executed
-  ## This code could be useful when you want to have multiple threads with each one its event loop
-else:
-  ## Here on thread is spawn, for the event loop. No other threads shall be spawn for I/O operations, so there will be only two threads (one running sync code, and another running async code)
-  goAsync main(id = 1)
-  main(id = 2) ## Here main(id = 2) is not guaranted to be executed before main(id = 1)
-  ## The main thread will wait for the event loop to finish, the call to runEventLoop() is useless
-
-proc main(id: int) =
-  ## This is the end user code
-  discard goAsync myFile1.write("data") ## operation is scheduled but won't happen yet
-  wait goAsync myFile2.write("data") ## -> will do I/O in a async way (traiting pending operations) but wait until it is done
-  myFile2.write(id) ## if id == 1, we are in async context, so the I/O will be done in a async way and be waited. Otherwise it will be done in a sync way
-  echo goAsync myFile3.readAll()
-
-proc read(file: File, count: int) =
-  ## This is implementation detail that the end user won't know
-  if isAsyncThread:
-    EventLoop.register(file)
-    suspendUntilReadAvailable(file)
-    return file.readBlocking(count)
-  else:
-    return file.readBlocking(count)
+var myFile = AsyncFile.new("path", fmRead)
+## Inside sync context:
+readAndPrint()
+## Inside async context:
+goAsync readAndPrint()
 ```
+
+See [example.nim](https://github.com/Alogani/nimgo/tree/main/example.nim) for more examples
+
+## About NimGo Threading model
+
+The distincion has to be made between OS Threads (or simply threads) and coroutines. Coroutines are lightweight, cooperative multitasking units within a single thread, whereas OS threads are separate execution units managed by the operating system that can run in parallel on multiple cores.
+NimGo doesn't need OS Threads and won't spawn them for doing I/O operations.
+
+But, by default, for efficiency and to avoid intervention from callee, a thread is spawned to run the event loop (and all coroutines). For clarification, it is the only thread spawned, no new thread will be spawned for each I/O operations, only coroutines.
+This means that even if the user spawn multiple threads, only one thread will be responsible for I/O and handle it.
+
+The user can prevent this behaviour by defining the variable nimGoNoThread `nim r -d:nimGoNoThread myProgram.nim`
+In that case, no coroutines will be executed until either `wait` proc is used or `runEventLoop`.
+This allow the user to spawn multiple threads with each their own I/O event loop (allowing more scalibility for high demands)
