@@ -2,7 +2,7 @@ import ./coroutines {.all.}
 import std/[selectors, heapqueue, times, monotimes]
 
 ## Following to resolve:
-## - runEventLoop never stops (need to empty selector)
+## - having multiple possible coro listening to same fd can lead to data race
 ## - suspendUntilTime not finished implemented
 
 
@@ -74,12 +74,15 @@ proc poll*(timeoutMs: int) =
         coro.resume()
     var readyKeyList = dispatcher.selector.select(timeout.getRemainingMs())
     for readyKey in readyKeyList:
+        var asyncData = getData(dispatcher.selector, readyKey.fd)
         if Event.Write in readyKey.events:
-            for coro in getData(dispatcher.selector, readyKey.fd).writeList:
+            for coro in move(asyncData.writeList):
                 coro.resume()
         if {Event.Write} != readyKey.events:
-            for coro in getData(dispatcher.selector, readyKey.fd).readList:
+            for coro in move(asyncdata.readList):
                 coro.resume()
+        if asyncData.readList.len() == 0 and asyncData.writeList.len() == 0:
+            dispatcher.selector.unregister(readyKey.fd)
     
 proc runEventLoop*() =
     ## Run the event loop until it is empty
