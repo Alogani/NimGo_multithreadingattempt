@@ -1,13 +1,13 @@
 
-import ./public/eventloop {.all.}
+import ./eventdispatcher {.all.}
 import selectors
 import ./coroutines 
 
-registerHandle(MainEvDispatcher, 0, {Event.Read})
+var afd = registerHandle(0, {Event.Read})
 
 proc test() =
     echo "In"
-    suspendUntilRead(AsyncFd(0))
+    suspendUntilRead(afd)
     echo "Read done"
 
 var coro = Coroutine.new(test)

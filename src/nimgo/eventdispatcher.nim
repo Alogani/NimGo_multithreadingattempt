@@ -61,9 +61,19 @@ proc clampTimeout(x, b: int): int =
     if b != -1 and x > b: return b
     return x
 
-#[ *** Event dispatcher/loop *** ]#
-
+#[ *** Lock import *** ]#
 const NimGoNoThread {.booldefine.} = true
+
+when NimGoNoThread:
+    type Lock = object
+        ## Do nothing, but has the same API as the lock
+        ## Allow to switch to a non thread environment without changing high level code
+    template acquire(lock: var Lock) = discard
+    template release(lock: var Lock) = discard
+else:
+    import std/locks
+
+#[ *** Event dispatcher/loop *** ]#
 
 type
     AsyncData = object
@@ -75,6 +85,7 @@ type
         ## Reprensents a descriptor registered in the EventDispatcher: file handle, signal, timer, etc.
 
     EvDispatcher* = object
+        lock: Lock
         handles: HashSet[PollFd]
         numOfCorosRegistered: int # Inside the selector only
         onNextTickCoros: Deque[CoroutineBase]
@@ -215,7 +226,7 @@ proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
         dispatcher.closeCoros.popFirst().resume()
         processNextTickCoros(dispatcher, timeout)
 
-proc runEvDispatcher*(dispatcher: var EvDispatcher, timeoutMs = -1) =
+proc runEventLoop*(dispatcher: var EvDispatcher, timeoutMs = -1) =
     ## Run the event loop until it is empty
     ## Only two kinds of deadlocks can happen:
     ## - if at least one coroutine waits for an event that never happens
@@ -224,10 +235,10 @@ proc runEvDispatcher*(dispatcher: var EvDispatcher, timeoutMs = -1) =
     while not dispatcher.isEmpty() and not timeout.expired:
         runOnce(dispatcher, timeout.getRemainingMs())
 
-proc runEvDispatcher*(timeoutMs = -1) =
-    runEvDispatcher(MainEvDispatcher, timeoutMs)
+proc runEventLoop*(timeoutMs = -1) =
+    runEventLoop(MainEvDispatcher, timeoutMs)
 
-proc runEvDispatcherForever*(dispatcher: var EvDispatcher, timeoutMs = -1, stopFlag: var bool = false) =
+proc runEventLoopForever*(dispatcher: var EvDispatcher, timeoutMs = -1, stopFlag: var bool = false) =
     ## Run the event loop even if empty (causing a deadlock on main thread)
     ## To use inside a dedicated thread or with a timeout
     let timeout = TimeOutWatcher.init(timeoutMs)
@@ -236,8 +247,8 @@ proc runEvDispatcherForever*(dispatcher: var EvDispatcher, timeoutMs = -1, stopF
             sleep(SleepMsIfEmpty)
         runOnce(dispatcher, timeout.getRemainingMs())
 
-proc runEvDispatcherForever*(timeoutMs = -1, stopFlag: var bool = false) =
-    runEvDispatcherForever(MainEvDispatcher, timeoutMs, stopFlag)
+proc runEventLoopForever*(timeoutMs = -1, stopFlag: var bool = false) =
+    runEventLoopForever(MainEvDispatcher, timeoutMs, stopFlag)
 
 #[ *** Poll fd API *** ]#
 
@@ -302,8 +313,8 @@ proc suspendUntilRead*(fd: PollFd) =
     ## Will not update kind of events listening, this should be given/updated at registration
     let coro = getRunningCoroutine()
     if coro == nil: raise newException(ValueError, "Can only suspend inside a coroutine")
-    let dispatcher = getGlobalDispatcher()
-    dispatcher.selector.getData(fd.int).readList.add(coro)
+    MainEvDispatcher.numOfCorosRegistered.inc()
+    MainEvDispatcher.selector.getData(fd.int).readList.add(coro)
     suspend()
 
 
