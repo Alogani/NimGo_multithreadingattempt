@@ -1,16 +1,18 @@
+import os
+
+import aloganimisc/fasttest
+
 import ./private/spinlock
+import locks
 
-var lock = SpinLock()
-
-proc deadlock() =
-    echo "in"
-    lock.acquire()
-    echo "acquire 1"
-    lock.acquire()
-    echo "acquire 2"
-    lock.release()
-    echo "release 1"
-    lock.release()
-    echo "release 2"
-
-deadlock()
+const Rep = 100_000
+runBench("syslock"):
+    var lock: Lock
+    for i in 1..Rep:
+        acquire(lock)
+        release(lock)
+runBench("spinlock"):
+    var lock: SpinLock
+    for i in 1..Rep:
+        acquire(lock)
+        release(lock)
