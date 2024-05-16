@@ -1,8 +1,16 @@
-import ./coroutines
+import ./private/spinlock
 
-proc entry() =
-    echo "IN"
+var lock = SpinLock()
 
-var coro = Coroutine.new(entry)
-coro.destroy()
-coro.resume()
+proc deadlock() =
+    echo "in"
+    lock.acquire()
+    echo "acquire 1"
+    lock.acquire()
+    echo "acquire 2"
+    lock.release()
+    echo "release 1"
+    lock.release()
+    echo "release 2"
+
+deadlock()
