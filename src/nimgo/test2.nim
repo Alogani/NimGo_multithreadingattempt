@@ -1,5 +1,8 @@
-#define YOUPI"
+import ./coroutines
 
-proc printf*() {.importc, header: "#define YOUPI\n#include <string.h>".}
-proc printf2*() {.importc, header: "#define YOUPI\n#include <string.h>".}
-proc printf3*() {.importc, header: "#define YOUPI\n#include <string.h>".}
+proc entry() =
+    echo "IN"
+
+var coro = Coroutine.new(entry)
+coro.destroy()
+coro.resume()

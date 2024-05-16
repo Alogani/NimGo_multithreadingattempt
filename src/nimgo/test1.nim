@@ -1,5 +1,9 @@
 
-import ./[dispatcher, coroutines]
+import ./public/eventloop {.all.}
+import selectors
+import ./coroutines 
+
+registerHandle(MainEvDispatcher, 0, {Event.Read})
 
 proc test() =
     echo "In"
