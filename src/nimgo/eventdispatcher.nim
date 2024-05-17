@@ -1,6 +1,6 @@
 import ./coroutines {.all.}
 import std/[os, selectors, nativesockets]
-import std/[deques, sets, heapqueue, times, monotimes]
+import std/[sets, heapqueue, times, monotimes]
 
 #[
     Event loop implementation close to how the nodejs/libuv one's works (for more details: https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick).
@@ -61,40 +61,78 @@ proc clampTimeout(x, b: int): int =
     if b != -1 and x > b: return b
     return x
 
-#[ *** Lock import *** ]#
+#[ *** Thread safe API *** ]#
 const NimGoNoThread {.booldefine.} = true
 
 when NimGoNoThread:
-    type Lock = object
-        ## Do nothing, but has the same API as the lock
-        ## Allow to switch to a non thread environment without changing high level code
+    import deques
+
+    type Queue[T] = distinct Deque[T]
+    template push[T](q: Queue[T], data: T) = Deque[T](q).pushLast(data)
+    template pop[T](q: Queue[T]): T = Deque[T](q).popFirst()
+    template isEmpty[T](q: Queue[T]): bool = Deque[T](q).len() == 0
+
+    type Lock = object ## Do nothing, but has the same API as the lock
     template acquire(lock: var Lock) = discard
     template release(lock: var Lock) = discard
 else:
-    import std/locks
+    import std/[locks, channels]
+
+    type Queue[T] = distinct Channel[T]
+    template push[T](q: Queue[T], data: T) = discard Channel[T](q).trySend(data)
+    template pop[T](q: Queue[T]): T = Channel[T](q).recv()
+    template isEmpty[T](q: Queue[T]): bool = not Channel[T](q).ready()
+
+type Atomic[T] = object
+    lock: Lock
+    data: T
+proc initAtomic[T](data: T): Atomic[T] =
+    Atomic[T](data: data)
+template getNoLock[T](self: Atomic[T]): T = self.data
+template withLock[T](self: Atomic[T], body: untyped) =
+    self.lock.acquire()
+    body
+    self.lock.release()
+template set[T](self: Atomic[T], data: T) =
+    self.lock.acquire()
+    self.data = data
+    self.lock.release()
+template getAndClear[T](self: Atomic[T]): T =
+    self.lock.acquire()
+    var data = move(self.data)
+    self.lock.release()
+    data
+template atomicInc[T: SomeInteger](self: Atomic[T], val: T = 1) =
+    self.lock.acquire()
+    self.data += val
+    self.lock.release()
+template atomicDec[T: SomeInteger](self: Atomic[T], val: T = 1) =
+    self.lock.acquire()
+    self.data -= val
+    self.lock.release()
+
 
 #[ *** Event dispatcher/loop *** ]#
 
 type
     AsyncData = object
-        readList: seq[CoroutineBase] # Also stores all other event kind
-        writeList: seq[CoroutineBase]
+        readList: Atomic[seq[CoroutineBase]] # Also stores all other event kind
+        writeList: Atomic[seq[CoroutineBase]]
         unregisterWhenTriggered: bool
 
     PollFd* = distinct int
         ## Reprensents a descriptor registered in the EventDispatcher: file handle, signal, timer, etc.
 
     EvDispatcher* = object
-        lock: Lock
-        handles: HashSet[PollFd]
-        numOfCorosRegistered: int # Inside the selector only
-        onNextTickCoros: Deque[CoroutineBase]
+        handles: Atomic[HashSet[PollFd]]
+        numOfCorosRegistered: Atomic[int] # Inside the selector only
+        onNextTickCoros: Queue[CoroutineBase]
         # In the same order as the runOnce execution:
-        timers: HeapQueue[tuple[finishAt: MonoTime, coro: CoroutineBase]] # Thresold and not exact time
-        pendingCoros: Deque[CoroutineBase]
-        selector: Selector[AsyncData]
-        checkCoros: Deque[CoroutineBase] # Executed after the poll phase
-        closeCoros: Deque[CoroutineBase]
+        timers: Atomic[HeapQueue[tuple[finishAt: MonoTime, coro: CoroutineBase]]] # Thresold and not exact time
+        pendingCoros: Queue[CoroutineBase]
+        selector: Atomic[Selector[AsyncData]]
+        checkCoros: Queue[CoroutineBase] # Executed after the poll phase
+        closeCoros: Queue[CoroutineBase]
         
 const EvDispatcherTimeoutMs {.intdefine.} = 100
 const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
@@ -105,7 +143,7 @@ when NimGoNoThread:
 else:
     var MainEvDispatcher: EvDispatcher # Automatically set on import
 
-proc getGlobalDispatcher*(): var EvDispatcher =
+proc getGlobalDispatcher*(): EvDispatcher =
     return MainEvDispatcher
 
 proc setGlobalDispatcher*(dispatcher: EvDispatcher) =
@@ -114,36 +152,38 @@ proc setGlobalDispatcher*(dispatcher: EvDispatcher) =
 
 proc newDispatcher*(): EvDispatcher =
     EvDispatcher(
-        selector: newSelector[AsyncData]()
+        selector: initAtomic(newSelector[AsyncData]())
     )
 
 proc hasImmediatePendingCoros(dispatcher: EvDispatcher): bool =
-    dispatcher.onNextTickCoros.len() != 0 or
-        dispatcher.pendingCoros.len() != 0 or
-        dispatcher.checkCoros.len() != 0 or
-        dispatcher.closeCoros.len() != 0
+    not(dispatcher.onNextTickCoros.isEmpty() and
+        dispatcher.timers.getNoLock().len() == 0 and
+        dispatcher.pendingCoros.isEmpty() and
+        dispatcher.checkCoros.isEmpty() and
+        dispatcher.closeCoros.isEmpty())
 
 proc isEmpty*(dispatcher: EvDispatcher = MainEvDispatcher): bool =
-    dispatcher.numOfCorosRegistered == 0 and
-        dispatcher.onNextTickCoros.len() == 0 and
-        dispatcher.timers.len() == 0 and
-        dispatcher.pendingCoros.len() == 0 and
-        dispatcher.checkCoros.len() == 0 and
-        dispatcher.closeCoros.len() == 0
+    dispatcher.numOfCorosRegistered.getNoLock() == 0 and
+        dispatcher.onNextTickCoros.isEmpty() and
+        dispatcher.timers.getNoLock().len() == 0 and
+        dispatcher.pendingCoros.isEmpty() and
+        dispatcher.checkCoros.isEmpty() and
+        dispatcher.closeCoros.isEmpty()
 
 proc processNextTickCoros(dispatcher: var EvDispatcher, timeout: TimeOutWatcher) {.inline.} =
-    while dispatcher.onNextTickCoros.len() > 0 and not timeout.expired:
-        dispatcher.onNextTickCoros.popFirst().resume()
+    while not (dispatcher.onNextTickCoros.isEmpty or timeout.expired):
+        dispatcher.onNextTickCoros.pop().resume()
 
 proc processTimers(dispatcher: var EvDispatcher, coroLimitForTimer: var int, timeout: TimeOutWatcher) =
-    while coroLimitForTimer < CoroLimitByPhase or dispatcher.numOfCorosRegistered == 0:
+    while coroLimitForTimer < CoroLimitByPhase or dispatcher.numOfCorosRegistered.getNoLock() == 0:
         if timeout.expired():
             break
-        if dispatcher.timers.len() == 0:
+        if dispatcher.timers.getNoLock().len() == 0:
             break
-        if getMonotime() < dispatcher.timers[0].finishAt:
+        if getMonotime() < dispatcher.timers.getNoLock()[0].finishAt:
             break
-        dispatcher.timers.pop().coro.resume()
+        withLock(dispatcher.timers):
+            dispatcher.timers.data.pop().coro.resume()
         processNextTickCoros(dispatcher, timeout)
         coroLimitForTimer += 1
 
@@ -157,9 +197,9 @@ proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
     processTimers(dispatcher, coroLimitForTimer, timeout)
     # Phase 2: process pending
     for i in 0 ..< CoroLimitByPhase:
-        if dispatcher.pendingCoros.len() == 0 or timeout.expired:
+        if dispatcher.pendingCoros.isEmpty() or timeout.expired:
             break
-        dispatcher.pendingCoros.popFirst().resume()
+        dispatcher.pendingCoros.pop().resume()
         processNextTickCoros(dispatcher, timeout)
     # Phase 1 again
     processTimers(dispatcher, coroLimitForTimer, timeout)
@@ -167,15 +207,15 @@ proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
     if timeout.expired:
         return
     var pollTimeoutMs: int
-    if dispatcher.timers.len() > 0:
+    if dispatcher.timers.getNoLock().len() > 0:
         if timeout.hasNoDeadline():
             pollTimeoutMs = clampTimeout(
-                inMilliseconds(dispatcher.timers[0].finishAt - getMonoTime()),
+                inMilliseconds(dispatcher.timers.getNoLock()[0].finishAt - getMonoTime()),
                 EvDispatcherTimeoutMs)        
         else:
 
             pollTimeoutMs = clampTimeout(min(
-                inMilliseconds(dispatcher.timers[0].finishAt - getMonoTime()),
+                inMilliseconds(dispatcher.timers.getNoLock()[0].finishAt - getMonoTime()),
                 timeout.getRemainingMs()
             ), EvDispatcherTimeoutMs)
     elif timeout.hasNoDeadline():
@@ -183,31 +223,32 @@ proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
     else:
         pollTimeoutMs = EvDispatcherTimeoutMs
     # Phase 3: poll for I/O
-    while dispatcher.numOfCorosRegistered != 0:
+    while dispatcher.numOfCorosRegistered.getNoLock() != 0:
         # The event loop could return with no work if an event is triggered with no coroutine
         # If so, we will sleep and loop again
-        var readyKeyList = dispatcher.selector.select(pollTimeoutMs)
+        var readyKeyList = dispatcher.selector.getNoLock().select(pollTimeoutMs)
         var hasResumedCoro: bool
         if readyKeyList.len() == 0:
             break # timeout expired
         for readyKey in readyKeyList:
-            var asyncData = getData(dispatcher.selector, readyKey.fd)
+            var asyncData = getData(dispatcher.selector.getNoLock(), readyKey.fd)
             if Event.Write in readyKey.events:
-                let len = asyncData.writeList.len()
-                dispatcher.numOfCorosRegistered -= len
-                if len > 0: hasResumedCoro = true
-                for coro in move(asyncData.writeList): # We use move here to empty the queue
+                let writeList = asyncData.writeList.getAndClear()
+                dispatcher.numOfCorosRegistered.atomicDec(writeList.len)
+                if writeList.len > 0: hasResumedCoro = true
+                for coro in writeList: # We use move here to empty the queue
                     coro.resume()
                     processNextTickCoros(dispatcher, timeout)
             if {Event.Write} != readyKey.events:
-                let len = asyncData.readList.len()
-                dispatcher.numOfCorosRegistered -= len
-                if len > 0: hasResumedCoro = true
-                for coro in move(asyncdata.readList): # We use move here to empty the queue
+                let readList = asyncData.readList.getAndClear()
+                dispatcher.numOfCorosRegistered.atomicDec(readList.len)
+                if readList.len > 0: hasResumedCoro = true
+                for coro in readList: # We use move here to empty the queue
                     coro.resume()
                     processNextTickCoros(dispatcher, timeout)
             if asyncData.unregisterWhenTriggered:
-                dispatcher.selector.unregister(readyKey.fd)
+                withLock(dispatcher.selector):
+                    dispatcher.selector.data.unregister(readyKey.fd)
         if hasResumedCoro:
             break
         sleep(SleepMsIfInactive)
@@ -215,15 +256,15 @@ proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
     processTimers(dispatcher, coroLimitForTimer, timeout)
     # Phase 4: process "check" coros
     for i in 0 ..< CoroLimitByPhase:
-        if dispatcher.checkCoros.len() == 0 or timeout.expired:
+        if dispatcher.checkCoros.isEmpty() or timeout.expired:
             break
-        dispatcher.checkCoros.popFirst().resume()
+        dispatcher.checkCoros.pop().resume()
         processNextTickCoros(dispatcher, timeout)
     # Phase 5: process "close" coros, even if timeout is expired
     for i in 0 ..< CoroLimitByPhase:
-        if dispatcher.closeCoros.len() == 0:
+        if dispatcher.closeCoros.isEmpty():
             break
-        dispatcher.closeCoros.popFirst().resume()
+        dispatcher.closeCoros.pop().resume()
         processNextTickCoros(dispatcher, timeout)
 
 proc runEventLoop*(dispatcher: var EvDispatcher, timeoutMs = -1) =
@@ -257,15 +298,17 @@ proc registerEvent*(
     coros: seq[CoroutineBase] = @[],
     dispatcher: var EvDispatcher = MainEvDispatcher
 ) =
-    if coros.len() > 0: dispatcher.numOfCorosRegistered += coros.len()
-    dispatcher.selector.registerEvent(ev, AsyncData(readList: coros))
+    if coros.len() > 0: dispatcher.numOfCorosRegistered.atomicInc(coros.len())
+    withLock(dispatcher.selector):
+        dispatcher.selector.data.registerEvent(ev, AsyncData(readList: initAtomic(coros)))
 
 proc registerHandle*(
     fd: int | SocketHandle,
     events: set[Event],
     dispatcher: var EvDispatcher = MainEvDispatcher,
 ): PollFd =
-    dispatcher.selector.registerHandle(fd, events, AsyncData())
+    withLock(dispatcher.selector):
+        dispatcher.selector.data.registerHandle(fd, events, AsyncData())
     return PollFd(fd)
 
 proc registerProcess*(
@@ -274,10 +317,12 @@ proc registerProcess*(
     unregisterWhenTriggered = true,
     dispatcher: var EvDispatcher = MainEvDispatcher
 ): PollFd =
-    if coros.len() > 0: dispatcher.numOfCorosRegistered += coros.len()
-    PollFd(dispatcher.selector.registerProcess(pid,
-        AsyncData(readList: coros, unregisterWhenTriggered: unregisterWhenTriggered))
-    )
+    if coros.len() > 0: dispatcher.numOfCorosRegistered.atomicInc(coros.len())
+    withLock(dispatcher.selector):
+        result = PollFd(dispatcher.selector.data.registerProcess(pid, AsyncData(
+            readList: initAtomic(coros),
+            unregisterWhenTriggered: unregisterWhenTriggered
+        )))
 
 proc registerSignal*(
     signal: int,
@@ -285,10 +330,12 @@ proc registerSignal*(
     unregisterWhenTriggered = true,
     dispatcher: var EvDispatcher = MainEvDispatcher
 ): PollFd =
-    if coros.len() > 0: dispatcher.numOfCorosRegistered += coros.len()
-    PollFd(dispatcher.selector.registerSignal(signal,
-        AsyncData(readList: coros, unregisterWhenTriggered: unregisterWhenTriggered))
-    )
+    if coros.len() > 0: dispatcher.numOfCorosRegistered.atomicInc(coros.len())
+    withLock(dispatcher.selector):
+        result = PollFd(dispatcher.selector.data.registerSignal(signal, AsyncData(
+            readList: initAtomic(coros),
+            unregisterWhenTriggered: unregisterWhenTriggered
+        )))
 
 proc registerTimer*(
     timeout: int,
@@ -298,23 +345,33 @@ proc registerTimer*(
 ): PollFd =
     ## Timer is registered inside the poll, not inside the event loop
     ## Use another function to sleep inside the event loop (more reactive, less overhead)
-    if coros.len() > 0: dispatcher.numOfCorosRegistered += coros.len()
-    PollFd(dispatcher.selector.registerTimer(timeout, true,
-        AsyncData(readList: coros, unregisterWhenTriggered: oneshot))
-    )
+    if coros.len() > 0: dispatcher.numOfCorosRegistered.atomicInc(coros.len())
+    withLock(dispatcher.selector):
+        result = PollFd(dispatcher.selector.data.registerTimer(timeout, oneshot, AsyncData(
+            readList: initAtomic(coros),
+            unregisterWhenTriggered: oneshot
+        )))
 
 proc unregister*(fd: PollFd, dispatcher: var EvDispatcher = MainEvDispatcher) =
-    var asyncData = dispatcher.selector.getData(fd.int)
-    dispatcher.numOfCorosRegistered -= asyncData.readList.len()
-    dispatcher.numOfCorosRegistered -= asyncData.writeList.len()
-    dispatcher.selector.unregister(fd.int)
+    withLock(dispatcher.selector):
+        var asyncData = dispatcher.selector.data.getData(fd.int)
+        let readList = asyncData.readList.getAndClear()
+        dispatcher.numOfCorosRegistered.atomicDec(readList.len())
+        for coro in readList:
+            coro.destroy()
+        let writeList = asyncData.writeList.getAndClear()
+        dispatcher.numOfCorosRegistered.atomicDec(writeList.len())
+        for coro in writeList:
+            coro.destroy()
+        dispatcher.selector.data.unregister(fd.int)
 
 proc suspendUntilRead*(fd: PollFd) =
     ## Will not update kind of events listening, this should be given/updated at registration
     let coro = getRunningCoroutine()
     if coro == nil: raise newException(ValueError, "Can only suspend inside a coroutine")
-    MainEvDispatcher.numOfCorosRegistered.inc()
-    MainEvDispatcher.selector.getData(fd.int).readList.add(coro)
+    withLock MainEvDispatcher.selector.getNoLock().getData(fd.int).readList:
+        MainEvDispatcher.selector.getNoLock().getData(fd.int).readList.data.add(coro)
+    MainEvDispatcher.numOfCorosRegistered.atomicInc()
     suspend()
 
 
