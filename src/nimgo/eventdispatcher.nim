@@ -252,7 +252,8 @@ proc runEventLoop*(
         dispatcher = MainEvDispatcher,
         stopWhenEmpty = BoolFlag(value: true)
     ) =
-    ## The same event loop cannot be run twice
+    ## The same event loop cannot be run twice.
+    ## It is automatically run in another thread if nimGoNOThread is not set
     ## If stopWhenEmpty is set to false with no timeout, it will run forever.
     ## Running forever can be useful when run a thread is dedicated to the event loop
     ## Two kinds of deadlocks can happen when stopWhenEmpty = true and no timeoutMs:
