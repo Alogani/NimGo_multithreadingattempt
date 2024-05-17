@@ -14,3 +14,4 @@ proc asyncCtxt() =
 
 var coro = Coroutine.new(asyncCtxt)
 coro.resume()
+runEventLoop()
