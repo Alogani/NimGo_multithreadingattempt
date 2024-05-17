@@ -1,3 +1,4 @@
+import ./test2
 
 import ./eventdispatcher {.all.}
 import selectors
@@ -13,5 +14,5 @@ proc test() =
 var coro = Coroutine.new(test)
 coro.resume()
 echo "back to main"
-runEventLoop()
+#runEventLoop()
 echo "event loop over"

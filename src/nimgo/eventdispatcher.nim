@@ -1,9 +1,8 @@
 import ./coroutines {.all.}
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
-import sets
 
-const NimGoNoThread {.booldefine.} = true
+const NimGoNoThread {.booldefine.} = false
 when NimGoNoThread:
     import ./private/fakeatomics
 else:
@@ -79,7 +78,12 @@ type
     PollFd* = distinct int
         ## Reprensents a descriptor registered in the EventDispatcher: file handle, signal, timer, etc.
 
+    BoolFlag* = ref object
+        ## Must be stored globally to avoid GC if used between threads
+        value*: bool
+
     EvDispatcher* = ref object
+        running: bool
         # Following need the lock.
         # Atomic not used for simpler code on avoiding object copy (elements changed at same time)
         lock: Lock
@@ -96,10 +100,25 @@ const EvDispatcherTimeoutMs {.intdefine.} = 100
 const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
 const SleepMsIfEmpty = 50 # to avoid busy waiting. When the event loop is empty
 const CoroLimitByPhase = 30 # To avoid starving the coros inside the poll
+
+proc newDispatcher*(): EvDispatcher
+
 when NimGoNoThread:
-    var MainEvDispatcher {.threadvar.}: EvDispatcher # Automatically set on import
+    var MainEvDispatcher {.threadvar.}: EvDispatcher
+    MainEvDispatcher = newDispatcher()
 else:
-    var MainEvDispatcher: EvDispatcher # Automatically set on import
+    import std/exitprocs
+    var MainEvDispatcher = newDispatcher()
+    proc runEventLoop*(args: (int, EvDispatcher, BoolFlag)) {.thread.}
+    var StopWhenEmpty = BoolFlag(value: false)
+    var EventLoopThread: Thread[(int, EvDispatcher, BoolFlag)]
+    createThread(EventLoopThread, runEventLoop, (-1, MainEvDispatcher, StopWhenEmpty))
+    addExitProc(proc() =
+        if getProgramResult() == 0:
+            StopWhenEmpty.value = true
+            joinThread(EventLoopThread)
+    )
+
 
 proc getGlobalDispatcher*(): EvDispatcher =
     return MainEvDispatcher
@@ -128,11 +147,11 @@ proc isEmpty*(dispatcher: EvDispatcher = MainEvDispatcher): bool =
         dispatcher.checkCoros.empty() and
         dispatcher.closeCoros.empty()
 
-proc processNextTickCoros(dispatcher: var EvDispatcher, timeout: TimeOutWatcher) {.inline.} =
+proc processNextTickCoros(dispatcher: EvDispatcher, timeout: TimeOutWatcher) {.inline.} =
     while not (dispatcher.onNextTickCoros.empty() or timeout.expired):
         dispatcher.onNextTickCoros.popFirst().resume()
 
-proc processTimers(dispatcher: var EvDispatcher, coroLimitForTimer: var int, timeout: TimeOutWatcher) =
+proc processTimers(dispatcher: EvDispatcher, coroLimitForTimer: var int, timeout: TimeOutWatcher) =
     while coroLimitForTimer < CoroLimitByPhase or dispatcher.numOfCorosRegistered == 0:
         if timeout.expired():
             break
@@ -144,7 +163,7 @@ proc processTimers(dispatcher: var EvDispatcher, coroLimitForTimer: var int, tim
         processNextTickCoros(dispatcher, timeout)
         coroLimitForTimer += 1
 
-proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
+proc runOnce(dispatcher: EvDispatcher, timeoutMs: int) =
     ## Run the event loop. The poll phase is done only once
     ## Timeout is a thresold and be taken in account lately
     let timeout = TimeOutWatcher.init(timeoutMs)
@@ -228,29 +247,36 @@ proc runOnce(dispatcher: var EvDispatcher, timeoutMs: int) =
         dispatcher.closeCoros.popFirst().resume()
         processNextTickCoros(dispatcher, timeout)
 
-proc runEventLoop*(dispatcher: var EvDispatcher, timeoutMs = -1) =
-    ## Run the event loop until it is empty
-    ## Only two kinds of deadlocks can happen:
+proc runEventLoop*(
+        timeoutMs = -1,
+        dispatcher = MainEvDispatcher,
+        stopWhenEmpty = BoolFlag(value: true)
+    ) =
+    ## The same event loop cannot be run twice
+    ## If stopWhenEmpty is set to false with no timeout, it will run forever.
+    ## Running forever can be useful when run a thread is dedicated to the event loop
+    ## Two kinds of deadlocks can happen when stopWhenEmpty = true and no timeoutMs:
     ## - if at least one coroutine waits for an event that never happens
     ## - if a coroutine never stops, or recursivly add coroutines
+    if dispatcher.running:
+        raise newException(ValueError, "Cannot run the same event loop twice")
+    dispatcher.running = true
     let timeout = TimeOutWatcher.init(timeoutMs)
-    while not dispatcher.isEmpty() and not timeout.expired:
-        runOnce(dispatcher, timeout.getRemainingMs())
+    while not timeout.expired:
+        if dispatcher.isEmpty():
+            if stopWhenEmpty.value:
+                return
+            else:
+                sleep(SleepMsIfEmpty)
+        else:
+            runOnce(dispatcher, timeout.getRemainingMs())
+    dispatcher.running = false
 
-proc runEventLoop*(timeoutMs = -1) =
-    runEventLoop(MainEvDispatcher, timeoutMs)
+proc runEventLoop*(args: (int, EvDispatcher, BoolFlag)) {.thread.} =
+    runEventLoop(args[0], args[1], args[2])
 
-proc runEventLoopForever*(dispatcher: var EvDispatcher, timeoutMs = -1, stopFlag: var bool = false) =
-    ## Run the event loop even if empty (causing a deadlock on main thread)
-    ## To use inside a dedicated thread or with a timeout
-    let timeout = TimeOutWatcher.init(timeoutMs)
-    while not (stopFlag or timeout.expired):
-        while dispatcher.isEmpty() and not timeout.expired:
-            sleep(SleepMsIfEmpty)
-        runOnce(dispatcher, timeout.getRemainingMs())
-
-proc runEventLoopForever*(timeoutMs = -1, stopFlag: var bool = false) =
-    runEventLoopForever(MainEvDispatcher, timeoutMs, stopFlag)
+proc running*(dispatcher = MainEvDispatcher): bool =
+    dispatcher.running
 
 #[ *** Poll fd API *** ]#
 
@@ -345,15 +371,17 @@ proc updateEvents*(fd: PollFd, events: set[Event], dispatcher = MainEvDispatcher
     dispatcher.selector.updateHandle(fd.int, events)
 
 proc suspendUntilRead*(fd: PollFd, dispatcher = MainEvDispatcher) =
+    ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock
+    ## If PollFd is not a file, by definition only the coros in the readList will be resumed
     let coro = getRunningCoroutine()
     if coro == nil: raise newException(ValueError, "Can only suspend inside a coroutine")
     addToPoll(coro, fd, Event.Read, dispatcher)
     suspend()
 
 proc suspendUntilWrite*(fd: PollFd, dispatcher = MainEvDispatcher) =
+    ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock
+    ## If PollFd is not a file, by definition only the coros in the readList will be resumed
     let coro = getRunningCoroutine()
     if coro == nil: raise newException(ValueError, "Can only suspend inside a coroutine")
     addToPoll(coro, fd, Event.Write, dispatcher)
     suspend()
-
-MainEvDispatcher = newDispatcher()

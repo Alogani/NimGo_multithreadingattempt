@@ -15,7 +15,7 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 
 - [X] Implements the stackful coroutine API
 - [X] Implements the Event loop API in the same thread
-- [ ] Implements the possibility to run the Event loop in a second thread
+- [X] Implements the possibility to run the Event loop in a second thread
 - [ ] Implements the sync I/O operations for files
 - [ ] Implements the async I/O operations for files
 - [ ] Implement the *goAsync* template to add a coroutine inside the event loop
