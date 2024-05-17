@@ -2,6 +2,10 @@
 ## Lighweight and efficient thanks to direct asm code and optional support for virtual memory.
 ## No push and pop implementation are provided, because they can't be implemented with type safety, but because closure are supported, using any shared object (like seq or channel) is supported
 
+## About threads. Coroutines need to allocate data on the heap. This allocation is made inside c code and should not be collected by the GC
+## Using channels is susceptible to have an overhead due to the deep copy happening
+## Use of a global variable might be safier and more efficient
+
 #[ ********* minicoroutines.h v0.2.0 wrapper ********* ]#
 # Choice has been made to rely on minicoroutines for numerous reasons (efficient, single file, clear API, cross platform, virtual memory, etc.)
 # Inspired freely from https://git.envs.net/iacore/minicoro-nim

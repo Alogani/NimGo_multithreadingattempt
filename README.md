@@ -14,7 +14,7 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 ## Roadmap
 
 - [X] Implements the stackful coroutine API
-- [ ] Implements the Event loop API in the same thread
+- [X] Implements the Event loop API in the same thread
 - [ ] Implements the possibility to run the Event loop in a second thread
 - [ ] Implements the sync I/O operations for files
 - [ ] Implements the async I/O operations for files
@@ -126,4 +126,4 @@ This means that even if the user spawn multiple threads, only one thread will be
 
 The user can prevent this behaviour by defining the variable nimGoNoThread `nim r -d:nimGoNoThread myProgram.nim`
 In that case, no coroutines will be executed until either `wait` proc is used or `runEventLoop`.
-This allow the user to spawn multiple threads with each their own I/O event loop (allowing more scalibility for high demands)
+This allow the user to spawn multiple threads with each their own I/O event loop (allowing more scalability for high demands)
