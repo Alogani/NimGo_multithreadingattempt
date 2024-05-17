@@ -2,16 +2,15 @@
 import ./eventdispatcher {.all.}
 import selectors
 import ./coroutines
+import ./public/io
 
-var afd = registerHandle(0, {Event.Read})
+proc asyncCtxt() =
+    var afile: AsyncFile
+    discard openAsync(afile, FileHandle(0))
 
-proc test() =
-    echo "In"
-    suspendUntilRead(afd)
-    echo "Read done"
+    var buf = newString(100)
+    discard afile.readBuffer(addr(buf[0]), 100)
+    echo "BUF=", buf
 
-var coro = Coroutine.new(test)
+var coro = Coroutine.new(asyncCtxt)
 coro.resume()
-echo "back to main"
-#runEventLoop()
-echo "event loop over"

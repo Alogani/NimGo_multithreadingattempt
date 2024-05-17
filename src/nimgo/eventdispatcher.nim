@@ -2,6 +2,8 @@ import ./coroutines {.all.}
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
 
+export Event
+
 const NimGoNoThread* {.booldefine.} = false
     ## Lower case also works
 when NimGoNoThread:
@@ -25,8 +27,8 @@ else:
 ]#
 
 ## Following to resolve:
-## - having multiple possible coro listening to same fd can lead to data race
-## - suspendUntilTime not finished implemented
+## - For now, `onNextTickCoros`, `timers`, `pendingCoros`, `checkCoros` and `closeCoros` are not used
+## 
 
 
 #[ *** Timeout utility *** ]#
@@ -97,9 +99,9 @@ type
         checkCoros: AtomicQueue[CoroutineBase]
         closeCoros: AtomicQueue[CoroutineBase]
         
-const EvDispatcherTimeoutMs {.intdefine.} = 1000
+const EvDispatcherTimeoutMs {.intdefine.} = 100
 const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
-const SleepMsIfEmpty = 500 # to avoid busy waiting. When the event loop is empty
+const SleepMsIfEmpty = 50 # to avoid busy waiting. When the event loop is empty
 const CoroLimitByPhase = 30 # To avoid starving the coros inside the poll
 
 proc newDispatcher*(): EvDispatcher
@@ -134,13 +136,6 @@ proc newDispatcher*(): EvDispatcher =
     EvDispatcher(
         selector: newSelector[AsyncData]()
     )
-
-proc hasImmediatePendingCoros(dispatcher: EvDispatcher): bool =
-    not(dispatcher.onNextTickCoros.empty() and
-        dispatcher.timers.empty() and
-        dispatcher.pendingCoros.empty() and
-        dispatcher.checkCoros.empty() and
-        dispatcher.closeCoros.empty())
 
 proc isEmpty*(dispatcher: EvDispatcher = MainEvDispatcher): bool =
     dispatcher.numOfCorosRegistered == 0 and
