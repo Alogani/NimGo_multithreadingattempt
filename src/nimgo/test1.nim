@@ -1,8 +1,7 @@
-import ./test2
 
 import ./eventdispatcher {.all.}
 import selectors
-import ./coroutines 
+import ./coroutines
 
 var afd = registerHandle(0, {Event.Read})
 

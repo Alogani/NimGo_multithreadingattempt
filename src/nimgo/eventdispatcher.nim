@@ -2,7 +2,8 @@ import ./coroutines {.all.}
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
 
-const NimGoNoThread {.booldefine.} = false
+const NimGoNoThread* {.booldefine.} = false
+    ## Lower case also works
 when NimGoNoThread:
     import ./private/fakeatomics
 else:
@@ -96,9 +97,9 @@ type
         checkCoros: AtomicQueue[CoroutineBase]
         closeCoros: AtomicQueue[CoroutineBase]
         
-const EvDispatcherTimeoutMs {.intdefine.} = 100
+const EvDispatcherTimeoutMs {.intdefine.} = 1000
 const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
-const SleepMsIfEmpty = 50 # to avoid busy waiting. When the event loop is empty
+const SleepMsIfEmpty = 500 # to avoid busy waiting. When the event loop is empty
 const CoroLimitByPhase = 30 # To avoid starving the coros inside the poll
 
 proc newDispatcher*(): EvDispatcher
@@ -113,10 +114,12 @@ else:
     var StopWhenEmpty = BoolFlag(value: false)
     var EventLoopThread: Thread[(int, EvDispatcher, BoolFlag)]
     createThread(EventLoopThread, runEventLoop, (-1, MainEvDispatcher, StopWhenEmpty))
+    Gc_ref(MainEvDispatcher)
     addExitProc(proc() =
         if getProgramResult() == 0:
             StopWhenEmpty.value = true
             joinThread(EventLoopThread)
+        Gc_unref(MainEvDispatcher)
     )
 
 
@@ -187,14 +190,13 @@ proc runOnce(dispatcher: EvDispatcher, timeoutMs: int) =
         if timeout.hasNoDeadline():
             pollTimeoutMs = clampTimeout(
                 inMilliseconds(dispatcher.timers.peek().finishAt - getMonoTime()),
-                EvDispatcherTimeoutMs)        
+                EvDispatcherTimeoutMs)
         else:
-
             pollTimeoutMs = clampTimeout(min(
                 inMilliseconds(dispatcher.timers.peek().finishAt - getMonoTime()),
                 timeout.getRemainingMs()
             ), EvDispatcherTimeoutMs)
-    elif timeout.hasNoDeadline():
+    elif not timeout.hasNoDeadline():
         pollTimeoutMs = clampTimeout(timeout.getRemainingMs(), EvDispatcherTimeoutMs)
     else:
         pollTimeoutMs = EvDispatcherTimeoutMs
@@ -253,7 +255,7 @@ proc runEventLoop*(
         stopWhenEmpty = BoolFlag(value: true)
     ) =
     ## The same event loop cannot be run twice.
-    ## It is automatically run in another thread if nimGoNOThread is not set
+    ## It is automatically run in another thread if `NimGoNoThread` is not set.
     ## If stopWhenEmpty is set to false with no timeout, it will run forever.
     ## Running forever can be useful when run a thread is dedicated to the event loop
     ## Two kinds of deadlocks can happen when stopWhenEmpty = true and no timeoutMs:
@@ -266,7 +268,7 @@ proc runEventLoop*(
     while not timeout.expired:
         if dispatcher.isEmpty():
             if stopWhenEmpty.value:
-                return
+                break
             else:
                 sleep(SleepMsIfEmpty)
         else:
