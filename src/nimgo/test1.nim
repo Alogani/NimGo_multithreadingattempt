@@ -5,19 +5,32 @@ import ./public/task
 import ./coroutines
 import ./asyncio
 
-var afile: AsyncFile
-discard openAsync(afile, FileHandle(0))
+proc main() =
+    var stdinAsync: AsyncFile
+    discard openAsync(stdinAsync, FileHandle(0))
+    var stdoutAsync: AsyncFile
+    discard openAsync(stdoutAsync, FileHandle(1), fmWrite)
 
-proc readTest(afile: AsyncFile) =
-    var buf = newString(100)
-    discard afile.readBuffer(addr(buf[0]), 100)
-    echo "BUF=", buf
+    proc writeTest(afile: AsyncFile) =
+        var buf = "TO THE OUTPUT"
+        discard afile.writeBuffer(addr(buf[0]), buf.len())
+        echo "BUF=", buf
+    
+    proc readTest(afile: AsyncFile) =
+        #var buf = newString(100)
+        #discard afile.readBuffer(addr(buf[0]), 100)
+        goAsync writeTest(stdoutAsync)
 
-echo "Begin Read sync"
-#readTest()
+    proc nested() =
+        goAsync readTest(stdinAsync)
 
-echo "Begin Read async"
-goAsync readTest(afile)
+    echo "Begin Read sync"
+    #readTest()
+
+    echo "Begin Write async"
+    goAsync nested()
+
+main()
 
 echo "Run the ev loop"
 when NimGoNoThread:

@@ -68,3 +68,9 @@ proc readBuffer*(afile: AsyncFile, buffer: pointer, len: Natural): int =
         suspendUntilRead(afile.fd)
     afile.file.readBuffer(buffer, len)
 
+proc writeBuffer*(afile: AsyncFile, buffer: pointer, len: Natural): int =
+    if afile.pollable and runnedFromEventLoop():
+        if Event.Write notin afile.registeredEvents:
+            updateEvents(afile.fd, {Event.Write})
+        suspendUntilWrite(afile.fd)
+    afile.file.writeBuffer(buffer, len)

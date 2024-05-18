@@ -118,12 +118,11 @@ else:
     var StopWhenEmpty = BoolFlag(value: false)
     var EventLoopThread: Thread[(int, EvDispatcher, BoolFlag)]
     createThread(EventLoopThread, runEventLoop, (-1, MainEvDispatcher, StopWhenEmpty))
-    Gc_ref(MainEvDispatcher)
+    Gc_ref(MainEvDispatcher) # Hacky but works to avoid double free
     addExitProc(proc() =
         if getProgramResult() == 0:
             StopWhenEmpty.value = true
             joinThread(EventLoopThread)
-        Gc_unref(MainEvDispatcher)
     )
 
 proc getGlobalDispatcher*(): EvDispatcher =
