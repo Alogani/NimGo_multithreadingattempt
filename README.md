@@ -16,20 +16,19 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [X] Implements the stackful coroutine API
 - [X] Implements the Event loop API in the same thread
 - [X] Implements the possibility to run the Event loop in a second thread
-- [ ] Implements the sync I/O operations for files
-- [ ] Implements the async I/O operations for files
+- [X] Implements the basic I/O operations for files
+- [ ] Implements the all I/O operations for files
 - [X] Implement the *goAsync* template to add a coroutine inside the event loop
-- [ ] Introduce a *Task[T]* type as the return type of *goAsync*
+- [X] Introduce a *Task[T]* type as the return type of *goAsync*
 - [ ] Introduce some utilities for *Task[T]* :
  - `proc wait[T](task: Task[T]): T` (will block the current thread/or delegate to the event loop)
  - `proc isCompleted[T](task: Task[T]): bool`
  - `proc waitAll[T](task: seq[Task[T]]): seq[T]`
  - `proc waitAny[T](task: seq[Task[T]])`
  - etc. ?
-- [ ] Implements the sync I/O operations for timers/process/events/signals
-- [ ] Implements the async I/O operations for timers/process/events/signals
-- [ ] Implements the sync I/O operations for sockets
-- [ ] Implements the async I/O operations for sockets
+- [ ] Implements the I/O operations for timers/process/events/signals
+- [ ] Implements the basic I/O operations for sockets
+- [ ] Implements the all I/O operations for sockets
 - [ ] See if *Task[T]* can be converted to *Future[T]* from std/asyncdispatch to allow user to use both paradigm
 
 ## Comparisons with alternatives I/O handling paradigm
