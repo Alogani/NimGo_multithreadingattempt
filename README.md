@@ -42,14 +42,15 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
     - Or to facilitate complex intercommunications
 - **Drawbacks**:
   - slightly slower for very fast I/O operations (files)
-  - usage of more memory -> to estimate, but maybe 4 KB (using virtual memory) to 56 kB (using physical memory) by active I/O waiting operation
+  - usage of more memory (barely noticeable for few I/O operations)
 
 ### Compared to threads
 _The advantages and drawbacks are similar than comparing async/await with threads_
 
 - **Advantages**:
-  - easiness to pass data
-  - much more lightweight on memory, no OS limitations on the "spawning" count
+  - simpler to spawn, simpler to pass data between coroutines and have a result
+  - more lightweight on memory
+  - No spawn limit (hundreds of thousands of courintes can be spawned)
   - faster for I/O
 - **Drawbacks**:
   - Code is not running parellelly (Doesn't answer necessarly the same problematics)
@@ -63,14 +64,12 @@ _The advantages and drawbacks are similar than comparing async/await with thread
     - Integration with sync code with almost no refactoring
     - I/O operations handling become implementation details, not polluting the end user
     - Compilation speed: almost no macro is necessary in coroutines implementation
-  - An overall simpler implementation (current async/await implementation in nim still suffers from memory leaks and inefficiencies)
-  - Slighlty faster (because Future[T] doesn't need to be passed each time anymore) -> to confirm
+  - Should be slightly faster _to confirm_
 - **Drawbacks**:
     - More memory is consumed for each new Coroutine:
         - this can made it less suitable for very high demanding servers (basic benchmarks in nimgo/benchmarks show that async/await memory don't grow, whereas nimgo grows at a constant pace. However asyncdispatch crashed on higher loads)
         - The higher memory consumption has to be relativised because :
             - data doesn't need anymore to be encapsulated in a Future[T] object which is passed around
-            - virtual memory can be used
             - for most usages, the difference of memory usage should be barely noticeable (only 50 kB for 1K spawns)
     - The async nature of I/O operation is not explicit anymore. If a library uses blocking I/O and `goAsync` is used it will block the event loop
     - The end user can't control as much the flow of operations
@@ -81,7 +80,7 @@ _The advantages and drawbacks are similar than comparing async/await with thread
 _having few knowledge of CPS, please take my assumptions with a grain of salt_
 
 - **Advantages**:
-  - It seems to impose a paradigm for the whole codebase (like function coloring for async/await)
+  - CPS seems to impose a paradigm for the whole codebase (like function coloring for async/await), whereas goAsync is multiparadigm
   - Simpler to use
   _To complete_
 - **Drawbacks**:
