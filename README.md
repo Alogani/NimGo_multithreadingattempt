@@ -18,6 +18,7 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [X] Implements the possibility to run the Event loop in a second thread
 - [X] Implements the basic I/O operations for files
 - [ ] Implements the all I/O operations for files
+- [ ] Implements a "trampoline" style (aka like then for async/await)
 - [X] Implement the *goAsync* template to add a coroutine inside the event loop
 - [X] Introduce a *Task[T]* type as the return type of *goAsync*
 - [ ] Introduce some utilities for *Task[T]* :
@@ -65,25 +66,28 @@ _The advantages and drawbacks are similar than comparing async/await with thread
   - An overall simpler implementation (current async/await implementation in nim still suffers from memory leaks and inefficiencies)
   - Slighlty faster (because Future[T] doesn't need to be passed each time anymore) -> to confirm
 - **Drawbacks**:
-    - More memory is consumed by I/O operations:
-        - this can made it less suitable for very high demanding servers (hundreds of thousands of connections, see comparisons between go and rust)
+    - More memory is consumed for each new Coroutine:
+        - this can made it less suitable for very high demanding servers (basic benchmarks in nimgo/benchmarks show that async/await memory don't grow, whereas nimgo grows at a constant pace. However asyncdispatch crashed on higher loads)
         - The higher memory consumption has to be relativised because :
             - data doesn't need anymore to be encapsulated in a Future[T] object which is passed around
             - virtual memory can be used
-            - for most usages, the difference of memory usage should be barely noticeable (-> to determine: a thresold where it can be noticeable)
-    - The async nature of I/O operation is not explicit anymore
+            - for most usages, the difference of memory usage should be barely noticeable (only 50 kB for 1K spawns)
+    - The async nature of I/O operation is not explicit anymore. If a library uses blocking I/O and `goAsync` is used it will block the event loop
     - The end user can't control as much the flow of operations
+    - Different paradigm: both are multi paradigm, but current async/await encourages a imperative style, whereas coroutines encourages a functional style
 
 ### Compared to CPS (continuation passing style)
+
 _having few knowledge of CPS, please take my assumptions with a grain of salt_
 
 - **Advantages**:
-  - No function coloring (see advantages compared to async/await for details)
+  - It seems to impose a paradigm for the whole codebase (like function coloring for async/await)
   - Simpler to use
+  _To complete_
 - **Drawbacks**:
-  - _Same drawbacks as compared to async/await_
   - Doesn't answer necessarly the same problematics
-  - Can't be moved between threads
+  - CPS seems to excel in data flow between threads, whereas coroutines are very limited (and certainly GC unsafe) when passed between threads
+  _To complete_
 
 ## Example
 _The exact and definitive API is susceptible to change_

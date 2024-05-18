@@ -13,7 +13,9 @@
 when not defined(gcArc) and not defined(gcOrc):
     {.warning: "coroutines is not tested without --mm:orc or --mm:arc".}
 
-const minicoroh = "./private/minicoro.h"
+from std/os import parentDir, `/` 
+const minicoroh = currentSourcePath().parentdir() / "private/minicoro.h"
+    
 {.compile: "./private/minicoro.c".}
 when defined(coroUseVMem):
     {.passC: "-DMCO_USE_VMEM_ALLOCATOR".}
