@@ -198,7 +198,7 @@ proc getState*(coro: CoroutineBase): CoroState =
     of McoCsSuspended:
         CsSuspended
 
-proc wait*[T](coro: Coroutine[T], reRaise = true): T =
+proc waitAndResume*[T](coro: Coroutine[T], reRaise = true): T =
     ## Also resume if not finished
     ## If reraise is set to false, use your own exception handling (like std/options)
     while coro.mcoCoroutine.getState() == McoCsSuspended:

@@ -18,7 +18,7 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [X] Implements the possibility to run the Event loop in a second thread
 - [ ] Implements the sync I/O operations for files
 - [ ] Implements the async I/O operations for files
-- [ ] Implement the *goAsync* template to add a coroutine inside the event loop
+- [X] Implement the *goAsync* template to add a coroutine inside the event loop
 - [ ] Introduce a *Task[T]* type as the return type of *goAsync*
 - [ ] Introduce some utilities for *Task[T]* :
  - `proc wait[T](task: Task[T]): T` (will block the current thread/or delegate to the event loop)

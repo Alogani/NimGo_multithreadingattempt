@@ -164,7 +164,7 @@ proc processTimers(dispatcher: EvDispatcher, coroLimitForTimer: var int, timeout
 
 proc runOnce(dispatcher: EvDispatcher, timeoutMs: int) =
     ## Run the event loop. The poll phase is done only once
-    ## Timeout is a thresold and be taken in account lately
+    ## Timeout is a thresold and can be taken in account lately
     let timeout = TimeOutWatcher.init(timeoutMs)
     processNextTickCoros(dispatcher, timeout)
     # Phase 1: process timers
@@ -371,6 +371,9 @@ proc addToPoll*(coro: CoroutineBase, fd: PollFd, event: Event, dispatcher = Main
         dispatcher.selector.getData(fd.int).writeList.add(coro)
     else:
         dispatcher.selector.getData(fd.int).readList.add(coro)
+
+proc addToPending*(coro: CoroutineBase, dispatcher = MainEvDispatcher) =
+    dispatcher.pendingCoros.addLast coro
 
 proc updateEvents*(fd: PollFd, events: set[Event], dispatcher = MainEvDispatcher) =
     dispatcher.selector.updateHandle(fd.int, events)
