@@ -1,6 +1,6 @@
 import std/syncio
 
-import ../eventdispatcher
+import ./eventdispatcher
 
 type AsyncFile* = ref object
     fd: PollFd # PollFd is the same as the file fd
@@ -62,7 +62,7 @@ proc close*(afile: AsyncFile) =
     afile.file.close()
 
 proc readBuffer*(afile: AsyncFile, buffer: pointer, len: Natural): int =
-    if afile.pollable:
+    if afile.pollable and runnedFromEventLoop():
         if Event.Read notin afile.registeredEvents:
             updateEvents(afile.fd, {Event.Read})
         suspendUntilRead(afile.fd)

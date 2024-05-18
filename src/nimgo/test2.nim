@@ -1,8 +1,4 @@
+import ./coroutines
 
-proc main() =
-    echo "blah"
-
-proc main(blah: string) =
-    echo blah
-
-export main
+var c = getRunningCoroutine()
+echo c.getState()

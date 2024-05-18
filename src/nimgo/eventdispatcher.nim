@@ -98,11 +98,13 @@ type
         pendingCoros: AtomicQueue[CoroutineBase]
         checkCoros: AtomicQueue[CoroutineBase]
         closeCoros: AtomicQueue[CoroutineBase]
-        
+    
 const EvDispatcherTimeoutMs {.intdefine.} = 100
 const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
 const SleepMsIfEmpty = 50 # to avoid busy waiting. When the event loop is empty
 const CoroLimitByPhase = 30 # To avoid starving the coros inside the poll
+
+var InsideEventLoop {.threadvar.}: bool
 
 proc newDispatcher*(): EvDispatcher
 
@@ -123,7 +125,6 @@ else:
             joinThread(EventLoopThread)
         Gc_unref(MainEvDispatcher)
     )
-
 
 proc getGlobalDispatcher*(): EvDispatcher =
     return MainEvDispatcher
@@ -258,8 +259,12 @@ proc runEventLoop*(
     ## - if a coroutine never stops, or recursivly add coroutines
     if dispatcher.running:
         raise newException(ValueError, "Cannot run the same event loop twice")
-    dispatcher.running = true
     let timeout = TimeOutWatcher.init(timeoutMs)
+    dispatcher.running = true
+    InsideEventLoop = true
+    defer:
+        dispatcher.running = false
+        InsideEventLoop = false
     while not timeout.expired:
         if dispatcher.isEmpty():
             if stopWhenEmpty.value:
@@ -268,10 +273,12 @@ proc runEventLoop*(
                 sleep(SleepMsIfEmpty)
         else:
             runOnce(dispatcher, timeout.getRemainingMs())
-    dispatcher.running = false
 
 proc runEventLoop*(args: (int, EvDispatcher, BoolFlag)) {.thread.} =
     runEventLoop(args[0], args[1], args[2])
+
+proc runnedFromEventLoop*(): bool =
+    InsideEventLoop
 
 proc running*(dispatcher = MainEvDispatcher): bool =
     dispatcher.running
