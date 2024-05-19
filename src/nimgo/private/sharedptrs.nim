@@ -1,5 +1,5 @@
-# Source: https://nimble.directory/pkg/threading
-# With some tweaks
+# Source: https://github.com/nim-lang/threading/blob/master/threading/smartptrs.nim
+# With small tweaks
 
 import ./atomics
 
@@ -37,7 +37,7 @@ proc `=copy`*[T](dest: var SharedPtr[T], src: SharedPtr[T]) =
 proc newSharedPtr0*[T](t: typedesc[T]): SharedPtr[T] =
     ## Returns a zero initialized shared pointer
     result.val = cast[typeof(result.val)](allocShared0(sizeof(result.val[])))
-    #result.val[].counter.set(0)
+    result.val[].counter.set(0)
 
 proc isNil*[T](p: SharedPtr[T]): bool {.inline.} =
   p.val == nil

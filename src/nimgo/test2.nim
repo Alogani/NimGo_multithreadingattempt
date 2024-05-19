@@ -1,15 +1,22 @@
-import std/macros
-import std/threading
+import ./coroutines
+import ./corochan
+import ./eventdispatcher
 
-macro dumpT(fn: typed) =
-    echo fn.treeRepr()
+import ./public/task
 
-macro dumpU(fn: untyped) =
-    echo fn.treeRepr()
+var mychan = newCoroChan[string]()
 
-proc read(a, b, c: int): int =
-    discard
+proc client() =
+    mychan.setListener(getCurrentCoroutine())
+    for data in mychan:
+        echo "data=", data
 
-dumpT read
+proc producer() =
+    for i in 0..5:
+        mychan.send("blah=" & $i)
+        discard registerTimer(500, false, @[getCurrentCoroutine()])
+        suspend()
+    mychan.close()
 
-dumpU read
+goAsync client
+goAsync producer

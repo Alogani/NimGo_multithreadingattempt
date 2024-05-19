@@ -15,22 +15,14 @@ proc main() =
         var buf = "TO THE OUTPUT"
         discard afile.writeBuffer(addr(buf[0]), buf.len())
     
-    proc readTest(afile: AsyncFile) =
-        var buf = newString(100)
-        discard afile.readBuffer(addr(buf[0]), 100)
-        echo "READ=", buf
-
-    proc nested(i: int) =
-        if i == 10000:
-            goAsync readTest(stdinAsync)
-        else:
-            goAsync nested(i + 1)
-
-    echo "Begin Read sync"
-    #readTest()
-
-    echo "Begin Write async"
-    goAsync nested(0)
+    proc willWrite() =
+        echo "Will write"
+        writeTest(stdoutAsync)
+        echo "Now suspend"
+        suspend()
+        echo "Reumed"
+    
+    goAsync willWrite()
 
 main()
 

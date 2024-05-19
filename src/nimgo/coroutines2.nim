@@ -10,8 +10,6 @@
 # Choice has been made to rely on minicoroutines for numerous reasons (efficient, single file, clear API, cross platform, virtual memory, etc.)
 # Inspired freely from https://git.envs.net/iacore/minicoro-nim
 
-import ./private/sharedptrs
-
 when not defined(gcArc) and not defined(gcOrc):
     {.warning: "coroutines is not tested without --mm:orc or --mm:arc".}
 
@@ -117,41 +115,33 @@ type
     EntryFn[T] = proc(): T
         ## Supports at least closure and nimcall calling convention
 
-    CoroutineBaseObj = object of RootObj
+    CoroutineBase = ref object of RootRef
         # During execution, we don't know the real type
         mcoCoroutine: ptr McoCoroutine
         exception: ref Exception
 
-    CoroutineObj[T] = object of CoroutineBaseObj
+    Coroutine*[T] = ref object of CoroutineBase
         # To ensure type and GC safety at the beginning and end of execution
         returnedVal: T
-        entryFn: EntryFn[T]
-
-    CoroutineBase = SharedPtr[CoroutineBaseObj]
-
-    Coroutine*[T] = SharedPtr[CoroutineObj[T]]
-
-proc toCoroutineBase*[T](coro: Coroutine[T]): CoroutineBase =
-    cast[CoroutineBase](coro)
+        entryFn: EntryFn[T]   
 
 proc coroutineMain[T](mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
     var coro = cast[Coroutine[T]](mcoCoroutine.getUserData())
     try:
         when T isnot void:
-            coro[].returnedVal = coro[].entryFn()
+            coro.returnedVal = coro.entryFn()
         else:
-            coro[].entryFn()
+            coro.entryFn()
     except:
-        coro[].exception = getCurrentException()
+        coro.exception = getCurrentException()
 
 
 proc newImpl[T](OT: type Coroutine, entryFn: EntryFn[T], stacksize = DefaultStackSize): Coroutine[T] =
-    result = newSharedPtr0(CoroutineObj[T])
-    result[].entryFn = entryFn
+    result = Coroutine[T](entryFn: entryFn)
     var mcoCoroDescriptor = initMcoDescriptor(coroutineMain[T], stacksize.uint)
     mcoCoroDescriptor.user_data = cast[pointer](result)
-    checkMcoReturnCode createMcoCoroutine(addr(result[].mcoCoroutine), addr mcoCoroDescriptor)
+    checkMcoReturnCode createMcoCoroutine(addr(result.mcoCoroutine), addr mcoCoroDescriptor)
 
 proc new*[T](OT: type Coroutine, entryFn: EntryFn[T], stacksize = DefaultStackSize): Coroutine[T] =
     ## Always call `wait` to clear memory than was allocated
@@ -165,18 +155,18 @@ proc destroy*(coro: CoroutineBase) =
     ## Allow to destroy an unfinished coroutine (finished coroutine autoclean themselves).
     ## Don't works on running coroutine
     ## It is better to avoid destroy and resume the coroutine until the end to avoid GC
-    if coro[].mcoCoroutine != nil:
-        checkMcoReturnCode uninitMcoCoroutine(coro[].mcoCoroutine)
-        checkMcoReturnCode destroyMco(coro[].mcoCoroutine)
-    coro[].mcoCoroutine = nil
+    if coro.mcoCoroutine != nil:
+        checkMcoReturnCode uninitMcoCoroutine(coro.mcoCoroutine)
+        checkMcoReturnCode destroyMco(coro.mcoCoroutine)
+    coro.mcoCoroutine = nil
 
 proc resume*(coro: CoroutineBase) =
     ## Will resume the coroutine where it stopped (or start it).
     ## Will do nothing if coroutine is finished
-    if getState(coro[].mcoCoroutine) == McoCsFinished:
+    if getState(coro.mcoCoroutine) == McoCsFinished:
         return
     let frame = getFrameState()
-    checkMcoReturnCode resume(coro[].mcoCoroutine)
+    checkMcoReturnCode resume(coro.mcoCoroutine)
     setFrameState(frame)
 
 proc suspend*() =
@@ -195,12 +185,12 @@ proc getCurrentCoroutine*(): CoroutineBase =
 
 proc getException*(coro: CoroutineBase): ref Exception =
     ## nil if state is different than CsDead
-    coro[].exception
+    coro.exception
 
 proc getState*(coro: CoroutineBase): CoroState =
-    case coro[].mcoCoroutine.getState():
+    case coro.mcoCoroutine.getState():
     of McoCsFinished:
-        if coro[].exception == nil:
+        if coro.exception == nil:
             CsFinished
         else:
             CsDead
@@ -214,14 +204,14 @@ proc getState*(coro: CoroutineBase): CoroState =
 proc getReturnValue*[T](coro: Coroutine[T]): T =
     ## You should check first if coroutine state is `CsSuspended`.
     ## Otherwise the return value will be default(T)
-    return move(coro[].returnedVal)
+    return move(coro.returnedVal)
 
 proc resumeLoop*[T](coro: Coroutine[T], reRaise = true): T =
     ## wait-like proc, that resumes the coro until it is finished and get the return val from it.
     ## If reraise is set to false, use your own exception handling (like std/options)
-    while coro[].mcoCoroutine.getState() == McoCsSuspended:
-        coro[].resume()
-    if coro[].exception != nil and reRaise:
-        raise coro[].exception
+    while coro.mcoCoroutine.getState() == McoCsSuspended:
+        coro.resume()
+    if coro.exception != nil and reRaise:
+        raise coro.exception
     when T isnot void:
-        return move(coro[].returnedVal)
+        return move(coro.returnedVal)

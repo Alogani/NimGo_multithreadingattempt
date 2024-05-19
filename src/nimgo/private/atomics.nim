@@ -43,7 +43,7 @@ proc fetchAdd*[T](self: var AtomicInt[T], num: T): T {.inline.} =
 proc fetchSub*[T](self: var AtomicInt[T], num: T): T {.inline.} =
     self.fetchAdd(-num)
 
-proc set*[T](self: var AtomicInt[T], num: T): T {.inline.} =
+proc set*[T](self: var AtomicInt[T], num: T) {.inline.} =
     self.lock.acquire()
     self.val = num
     self.lock.release()

@@ -84,11 +84,6 @@ proc clampTimeout(x, b: int): int =
 #[ *** Event dispatcher/loop *** ]#
 
 type
-    CoroutineWithCb {.acyclic.} = ref object of CoroutineBase
-        ## Resumed when base coro is triggered
-        coros: seq[CoroutineWithCb]
-
-
     AsyncData = object
         readList: AtomicSeq[CoroutineBase] # Also stores all other event kind
         writeList: AtomicSeq[CoroutineBase]
@@ -101,6 +96,8 @@ type
         ## Must be stored globally to avoid GC if used between threads
         value*: bool
 
+    CoroutineWithTimer = tuple[finishAt: MonoTime, coro: CoroutineBase]
+
     EvDispatcherObj = object
         running: bool
         # Following need the lock.
@@ -110,7 +107,7 @@ type
         selector: Selector[AsyncData]
         # For the order of execution, see preamble
         onNextTickCoros: AtomicQueue[CoroutineBase]
-        timers: AtomicHeapQueue[tuple[finishAt: MonoTime, coro: CoroutineBase]] # Thresold and not exact time
+        timers: AtomicHeapQueue[CoroutineWithTimer] # Thresold and not exact time
         pendingCoros: AtomicQueue[CoroutineBase]
         checkCoros: AtomicQueue[CoroutineBase]
         closeCoros: AtomicQueue[CoroutineBase]
@@ -138,6 +135,9 @@ proc getGlobalDispatcher*(): EvDispatcher =
 proc newDispatcher*(): EvDispatcher =
     result = newSharedPtr0(EvDispatcherObj)
     result[].selector = newSelector[AsyncData]()
+
+proc `<`(a, b: CoroutineWithTimer): bool =
+    a.finishAt < b.finishAt
 
 proc isDispatcherEmpty*(dispatcher: EvDispatcher = ActiveDispatcher): bool =
     dispatcher[].numOfCorosRegistered == 0 and
@@ -405,16 +405,16 @@ proc updateEvents*(fd: PollFd, events: set[Event], dispatcher = ActiveDispatcher
 proc suspendUntilRead*(fd: PollFd) =
     ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock
     ## If PollFd is not a file, by definition only the coros in the readList will be resumed
-    let coro = getRunningCoroutine()
-    if coro == nil: raise newException(ValueError, "Can only suspend inside a coroutine")
+    let coro = getCurrentCoroutine()
+    if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
     addToPoll(coro, fd, Event.Read, ActiveDispatcher)
     suspend()
 
 proc suspendUntilWrite*(fd: PollFd) =
     ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock
     ## If PollFd is not a file, by definition only the coros in the readList will be resumed
-    let coro = getRunningCoroutine()
-    if coro == nil: raise newException(ValueError, "Can only suspend inside a coroutine")
+    let coro = getCurrentCoroutine()
+    if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
     addToPoll(coro, fd, Event.Write, ActiveDispatcher)
     suspend()
 

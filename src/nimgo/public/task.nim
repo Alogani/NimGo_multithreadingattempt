@@ -18,6 +18,8 @@ proc goAsyncImpl[T](fn: proc(): T): Task[T] {.discardable.} =
     return Task[T](coro: coro)
 
 macro goAsync*(fn: untyped): untyped =
+    # Hard to do it without macro
+    # But this one is fast to compile (and called less often than async/await)
     case fn.kind
     of nnkCall:
         return quote do:
