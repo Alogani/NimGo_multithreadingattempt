@@ -1,4 +1,5 @@
 import std/macros
+import std/threading
 
 macro dumpT(fn: typed) =
     echo fn.treeRepr()

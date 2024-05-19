@@ -5,6 +5,7 @@ when false:
     # std/locks is performant both in high and low contention
     import std/locks
     export locks
+
 else:
     type Lock* = object
         ## Do nothing, but has the same API as the lock

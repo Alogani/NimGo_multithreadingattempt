@@ -19,8 +19,39 @@ else:
 # The following atomic structures should be stored inside a global variable for safety
 # Channels are not used to avoid deep copy (less efficient when transfering lot of data)
 
-
 import std/[heapqueue, deques]
+
+type
+    AtomicInt*[T: SomeInteger] = object
+        val: T
+        lock: Lock
+
+proc inc*[T](self: var AtomicInt[T], num: T = 1) {.inline.} =
+    self.lock.acquire()
+    self.val.inc num
+    self.lock.release()
+
+proc dec*[T](self: var AtomicInt[T], num: T = 1) {.inline.} =
+    self.inc (-num)
+
+proc fetchAdd*[T](self: var AtomicInt[T], num: T): T {.inline.} =
+    self.lock.acquire()
+    result = self.val + num
+    self.val = result
+    self.lock.release()
+
+proc fetchSub*[T](self: var AtomicInt[T], num: T): T {.inline.} =
+    self.fetchAdd(-num)
+
+proc set*[T](self: var AtomicInt[T], num: T): T {.inline.} =
+    self.lock.acquire()
+    self.val = num
+    self.lock.release()
+
+proc get*[T](self: var AtomicInt[T]): T {.inline.} =
+    self.lock.acquire()
+    result = self.val
+    self.lock.release()
 
 type
     AtomicQueue*[T] = object

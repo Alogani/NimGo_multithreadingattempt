@@ -1,36 +1,40 @@
 
 import ./eventdispatcher {.all.}
+import selectors
 import ./public/task
+import ./coroutines
 import ./asyncio
-
-const SpawnNumber = 100_000
-#[
-    # -d:release
-    Res Memory: 880M
-    Virtual Memory: 5510M
-    # -d:corousevmem -d:release
-    Res Memory: 3344M
-    Virtual Memory: 195G
-]#
 
 proc main() =
     var stdinAsync: AsyncFile
     discard openAsync(stdinAsync, FileHandle(0))
+    var stdoutAsync: AsyncFile
+    discard openAsync(stdoutAsync, FileHandle(1), fmWrite)
 
+    proc writeTest(afile: AsyncFile) =
+        var buf = "TO THE OUTPUT"
+        discard afile.writeBuffer(addr(buf[0]), buf.len())
+    
     proc readTest(afile: AsyncFile) =
         var buf = newString(100)
-        echo "Please provide input"
         discard afile.readBuffer(addr(buf[0]), 100)
         echo "READ=", buf
 
     proc nested(i: int) =
-        if i == 100_000:
+        if i == 10000:
             goAsync readTest(stdinAsync)
         else:
             goAsync nested(i + 1)
 
+    echo "Begin Read sync"
+    #readTest()
+
+    echo "Begin Write async"
     goAsync nested(0)
+
 main()
 
-when defined(NimGoNoThread):
+
+echo "Run the ev loop"
+when NimGoNoStart:
     runEventLoop()

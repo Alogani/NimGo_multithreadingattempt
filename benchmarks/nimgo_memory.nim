@@ -3,7 +3,7 @@ import ../src/nimgo/asyncio
 
 const SpawnNumber = 1_000_000
 #[
-    Working on commit 37. Tested on Fedora OS
+    Tested on commit number 37, with Fedora OS. Memory was mesured at `await readTest(stdinAsync)`
     This benchmark don't reflect real usage and shall be taken with a grain of salt.
     (it should be replaced by a better and more realistic example)
 

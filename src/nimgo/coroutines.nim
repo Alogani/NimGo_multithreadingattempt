@@ -200,12 +200,17 @@ proc getState*(coro: CoroutineBase): CoroState =
     of McoCsSuspended:
         CsSuspended
 
-proc waitAndResume*[T](coro: Coroutine[T], reRaise = true): T =
-    ## Also resume if not finished
+proc getReturnValue*[T](coro: Coroutine[T]): T =
+    ## You should check first if coroutine state is `CsSuspended`.
+    ## Otherwise the return value will be default(T)
+    return move(coro.returnedVal)
+
+proc resumeLoop*[T](coro: Coroutine[T], reRaise = true): T =
+    ## wait-like proc, that resumes the coro until it is finished and get the return val from it.
     ## If reraise is set to false, use your own exception handling (like std/options)
     while coro.mcoCoroutine.getState() == McoCsSuspended:
         coro.resume()
     if coro.exception != nil and reRaise:
         raise coro.exception
     when T isnot void:
-        return coro.returnedVal
+        return move(coro.returnedVal)

@@ -3,15 +3,16 @@ import std/asyncfile
 
 const SpawnNumber = 40_000
 #[
-    Tested on Fedora OS
+    Tested on Fedora OS. Memory was mesured at `await readTest(stdinAsync)`
     This benchmark don't reflect real usage and shall be taken with a grain of salt.
-    (it should be replaced by a better and more realistic example)
+    (it should be replaced by a better and more realistic example). 
+    I'm surprised by the good results of async/await, maybe memory leaks were resolved in nim v2.0.4, or maybe the test code is wrong.
 
     # With SpawnNumber = 100_000
     ## -d:release
     core_dumped (unable to work around 50_000)
 
-     # With SpawnNumber = 40_000
+    # With SpawnNumber = 40_000
     ## -d:release
     Res Memory: 18K
     Virtual Memory: 21K
