@@ -1,5 +1,5 @@
 import ./coroutines {.all.}
-import ./private/sharedptrs
+import ./private/smartptrs
 import std/exitprocs
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
@@ -380,10 +380,10 @@ proc unregister*(fd: PollFd, dispatcher = ActiveDispatcher) =
     dispatcher[].numOfCorosRegistered -= readList.len() + writeList.len()
     dispatcher[].selector.unregister(fd.int)
     dispatcher[].lock.release()
-    for coro in readList:
-        coro.destroy()
-    for coro in writeList:
-        coro.destroy()
+    #for coro in readList:
+    #    coro.destroy()
+    #for coro in writeList:
+    #    coro.destroy()
 
 proc addToPoll*(coro: CoroutineBase, fd: PollFd, event: Event, dispatcher = ActiveDispatcher) =
     ## Will not update the type event listening
@@ -405,7 +405,7 @@ proc suspendUntilRead*(fd: PollFd) =
     ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock
     ## If PollFd is not a file, by definition only the coros in the readList will be resumed
     let coro = getCurrentCoroutine()
-    if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
+    #if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
     addToPoll(coro, fd, Event.Read, ActiveDispatcher)
     suspend()
 
@@ -413,7 +413,7 @@ proc suspendUntilWrite*(fd: PollFd) =
     ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock
     ## If PollFd is not a file, by definition only the coros in the readList will be resumed
     let coro = getCurrentCoroutine()
-    if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
+    #if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
     addToPoll(coro, fd, Event.Write, ActiveDispatcher)
     suspend()
 

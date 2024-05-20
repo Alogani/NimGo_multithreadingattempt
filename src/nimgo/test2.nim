@@ -1,13 +1,14 @@
 import ./coroutines
-import ./corochan
+import ./cochannel
 import ./eventdispatcher
 
 import ./public/task
 
-var mychan = newCoroChan[string]()
+var mychan = newCoChannel[string]()
 
 proc client() =
     mychan.setListener(getCurrentCoroutine())
+    echo "listener set"
     for data in mychan:
         echo "data=", data
 

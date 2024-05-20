@@ -1,30 +1,14 @@
-import ./private/sharedptrs
-import std/macros
-
-import aloganimisc/fasttest
-
-type
-    Parent = ptr object of RootObj
-        valUntyped: int
-    
-    Child[T] = ptr object of Parent
-        valTyped: T
-        val2: int
-        val3: int
-
-proc echoParent(p: Parent) =
-    echo p[].valUntyped
+import ./private/threadqueue
 
 
-var c: Child[float]
-c = cast[Child[float]](alloc0(sizeof c[]))
-echo sizeof c[]
-
-echoParent(c)
-echoParent(cast[Parent](c))
-
-type MyRef = ref object
+type OmyRef = ref object
     val: int
 
-var a = MyRef()
-echo a[].val
+var q = newThreadQueue[OmyRef]()
+for i in 1..10:
+    q.push(OmyRef(val: i))
+
+while not q.empty():
+    echo repr q.pop()
+
+`=destroy`(q)

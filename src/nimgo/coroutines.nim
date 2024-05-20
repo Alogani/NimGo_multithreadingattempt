@@ -1,10 +1,6 @@
 ## Stackful asymmetric coroutines implementation, inspired freely from some language and relying on minicoro c library.
 ## Lighweight and efficient thanks to direct asm code and optional support for virtual memory.
-## No push and pop implementation are provided, because they can't be implemented with type safety, but because closure are supported, using any shared object (like seq or channel) is supported
-
-## About threads. Coroutines need to allocate data on the heap. This allocation is made inside c code and should not be collected by the GC
-## Using channels is susceptible to have an overhead due to the deep copy happening
-## Use of a global variable might be safier and more efficient
+## Push, pop and return value were not implemented, because type and GC safety cannot be guaranted, especially in multithreaded environment. Use CoChannels instead
 
 #[ ********* minicoroutines.h v0.2.0 wrapper ********* ]#
 # Choice has been made to rely on minicoroutines for numerous reasons (efficient, single file, clear API, cross platform, virtual memory, etc.)
@@ -104,6 +100,8 @@ proc checkMcoReturnCode(returnCode: McoReturnCode) =
 
 #[ ********* API ********* ]#
 
+import ./private/smartptrs
+
 type
     CoroState* = enum
         CsRunning ## Is the current main coroutine
@@ -112,58 +110,50 @@ type
         CsFinished
         CsDead ## Finished with an error
     
-    EntryFn[T] = proc(): T
+    EntryFn = proc()
         ## Supports at least closure and nimcall calling convention
 
-    CoroutineBase = ptr object of RootObj
-        # During execution, we don't know the real type
+    CoroutineObj = object
+        entryFn: EntryFn
         mcoCoroutine: ptr McoCoroutine
         exception: ptr Exception
 
-    Coroutine*[T] = ptr object of CoroutineBase
-        # To ensure type and GC safety at the beginning and end of execution
-        returnedVal: T
-        entryFn: EntryFn[T]   
+    Coroutine* = SharedPtr[CoroutineObj]
 
-proc coroutineMain[T](mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
+proc coroutineMain(mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
-    var coro = cast[Coroutine[T]](mcoCoroutine.getUserData())
+    let coroPtr = cast[ptr CoroutineObj](mcoCoroutine.getUserData())
     try:
-        when T isnot void:
-            coro.returnedVal = coro.entryFn()
-        else:
-            coro.entryFn()
+        coroPtr.entryFn()
     except:
         let exception = getCurrentException()
-        Gc_ref(exception) # Now we will handle its lifetime
-        coro.exception = cast[ptr Exception](exception)
+        Gc_ref exception
+        coroPtr.exception = cast[ptr Exception](exception)
 
+proc destroyMoCoroutine(coroObj: CoroutineObj) =
+    checkMcoReturnCode uninitMcoCoroutine(coroObj.mcoCoroutine)
+    checkMcoReturnCode destroyMco(coroObj.mcoCoroutine)
 
-proc newImpl[T](OT: type Coroutine, entryFn: EntryFn[T], stacksize = DefaultStackSize): Coroutine[T] =
-    result = cast[Coroutine[T]](allocShared0(sizeof result[]))
-    result[].entryFn = entryFn
-    var mcoCoroDescriptor = initMcoDescriptor(coroutineMain[T], stacksize.uint)
-    mcoCoroDescriptor.user_data = cast[pointer](result)
-    checkMcoReturnCode createMcoCoroutine(addr(result.mcoCoroutine), addr mcoCoroDescriptor)
-
-proc new*[T](OT: type Coroutine, entryFn: EntryFn[T], stacksize = DefaultStackSize): Coroutine[T] =
-    ## Always call `wait` to clear memory than was allocated
-    newImpl(Coroutine[T], entryFn, stacksize)
-
-proc new*(OT: type Coroutine, entryFn: EntryFn[void], stacksize = DefaultStackSize): Coroutine[void] =
-    # Due to type pickiness, the compiler needs this
-    newImpl(Coroutine[void], entryFn, stacksize)
-
-proc destroy*(coro: CoroutineBase) =
+proc `=destroy`*(coroObj: CoroutineObj) =
     ## Allow to destroy an unfinished coroutine (finished coroutine autoclean themselves).
     ## Don't works on running coroutine
     ## It is better to avoid destroy and resume the coroutine until the end to avoid GC
-    if coro[].mcoCoroutine != nil:
-        checkMcoReturnCode uninitMcoCoroutine(coro[].mcoCoroutine)
-        checkMcoReturnCode destroyMco(coro[].mcoCoroutine)
-    coro[].mcoCoroutine = nil
+    if coroObj.mcoCoroutine != nil:
+        try:
+            destroyMoCoroutine(coroObj)
+        except:
+            discard
+    if coroObj.exception != nil:
+        dealloc(coroObj.exception)
 
-proc resume*(coro: CoroutineBase) =
+proc new*(OT: type Coroutine, entryFn: EntryFn, stacksize = DefaultStackSize): Coroutine =
+    result = newSharedPtr(CoroutineObj)
+    result[] = CoroutineObj(entryFn: entryFn)
+    var mcoCoroDescriptor = initMcoDescriptor(coroutineMain, stacksize.uint)
+    mcoCoroDescriptor.user_data = result.getUnsafePtr()
+    checkMcoReturnCode createMcoCoroutine(addr(result[].mcoCoroutine), addr mcoCoroDescriptor)
+
+proc resume*(coro: Coroutine) =
     ## Will resume the coroutine where it stopped (or start it).
     ## Will do nothing if coroutine is finished
     if getState(coro[].mcoCoroutine) == McoCsFinished:
@@ -178,19 +168,17 @@ proc suspend*() =
     checkMcoReturnCode suspend(getActiveMco())
     setFrameState(frame)
 
-proc getCurrentCoroutine*(): CoroutineBase =
+proc getCurrentCoroutine*(): Coroutine =
     ## Get the actual running coroutine
     ## If we are not inside a coroutine, nil is retuned
-    ## .. warning:: this is the untyped limited version of coroutine.
-    ##      Because the exact type can't be determined in the middle of the coroutine
-    ##      If you need the typed version, you have to cast, but this is unsafe: `cast[Coroutine[T]](coroBase)`
-    return cast[CoroutineBase](getActiveMco().getUserData())
+    return toSharedPtr(CoroutineObj, getActiveMco().getUserData())
 
-proc getException*(coro: CoroutineBase): ref Exception =
+proc getException*(coro: Coroutine): ref Exception =
     ## nil if state is different than CsDead
-    cast[ref Exception](coro[].exception)
+    result = cast[ref Exception](coro[].exception)
+    Gc_unref(result)
 
-proc getState*(coro: CoroutineBase): CoroState =
+proc getState*(coro: Coroutine): CoroState =
     case coro[].mcoCoroutine.getState():
     of McoCsFinished:
         if coro[].exception == nil:
@@ -203,18 +191,3 @@ proc getState*(coro: CoroutineBase): CoroState =
         CsRunning
     of McoCsSuspended:
         CsSuspended
-
-proc getReturnValue*[T](coro: Coroutine[T]): T =
-    ## You should check first if coroutine state is `CsSuspended`.
-    ## Otherwise the return value will be default(T)
-    return move(coro.returnedVal)
-
-proc resumeLoop*[T](coro: Coroutine[T], reRaise = true): T =
-    ## wait-like proc, that resumes the coro until it is finished and get the return val from it.
-    ## If reraise is set to false, use your own exception handling (like std/options)
-    while coro[].mcoCoroutine.getState() == McoCsSuspended:
-        coro[].resume()
-    if coro[].exception != nil and reRaise:
-        raise coro[].exception
-    when T isnot void:
-        return move(coro[].returnedVal)
