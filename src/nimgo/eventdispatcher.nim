@@ -1,4 +1,5 @@
 import ./coroutines {.all.}
+import ./private/sharedptrs
 import std/exitprocs
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
@@ -16,11 +17,9 @@ else:
 
 when defined(NimGoNoThread):
     import ./private/atomicsfake
-    import ./private/sharedptrsfake
 else:
     ## Needs to be compiled with -d:threadsafe --threads:on to avoid selectors early free
     import ./private/atomics
-    import ./private/sharedptrs
 
 #[
     Event loop implementation close to how the nodejs/libuv one's works (for more details: https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick).

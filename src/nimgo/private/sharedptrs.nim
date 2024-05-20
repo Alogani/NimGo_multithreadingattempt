@@ -44,3 +44,23 @@ proc isNil*[T](p: SharedPtr[T]): bool {.inline.} =
 
 proc `[]`*[T](p: SharedPtr[T]): var T {.inline.} =
   p.val.value
+
+proc unsafeGetPtr*[T](p: SharedPtr[T]): pointer =
+    cast[pointer](p.val)
+
+proc toSharedPtr*[T](t: typedesc[T], p: pointer): SharedPtr[T] =
+    ## Will increment the reference count. Borrow/restitute is safer
+    var pVal = cast[ptr (T, AtomicInt[int])](p)
+    result = SharedPtr[T](val: pVal)
+    if p != nil:
+        result.val[].counter.inc(1)
+
+proc borrowVal*[T](p: SharedPtr[T]): ptr T =
+    ## Must be restitute, otherwise leak
+    if p.val != nil:
+        discard fetchAdd(p.val.counter, 1)
+        result = addr p.val[].value
+
+proc restituteVal*[T](p: SharedPtr[T], val: ptr T) =
+    if val != nil:
+        p.decr()
