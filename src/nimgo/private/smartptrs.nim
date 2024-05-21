@@ -2,10 +2,7 @@
 # With small tweaks
 # This doesn't use isolates, so uniqueness is not guaranted by the compiler
 
-import std/atomics
-
-proc newAtomic*[T](val: sink T): Atomic[T] =
-    result.store(val, moRelaxed)
+import ./atomics
 
 
 template checkNotNil*(p: pointer) =
@@ -19,16 +16,10 @@ type
         ## Non copyable pointer to a value of type `T` with exclusive ownership.
         val: ptr T
 
-when defined(nimAllowNonVarDestructor):
-    proc `=destroy`*[T](p: UniquePtr[T]) =
-        if p.val != nil:
-            `=destroy`(p.val[])
-            deallocShared(p.val)
-else:
-    proc `=destroy`*[T](p: var UniquePtr[T]) =
-        if p.val != nil:
-            `=destroy`(p.val[])
-            deallocShared(p.val)
+proc `=destroy`*[T](p: UniquePtr[T]) =
+    if p.val != nil:
+        `=destroy`(p.val[])
+        deallocShared(p.val)
 
 proc `=dup`*[T](src: UniquePtr[T]): UniquePtr[T] {.error.}
     ## The dup operation is disallowed for `UniquePtr`, it
@@ -52,38 +43,37 @@ proc `[]`*[T](p: UniquePtr[T]): var T {.inline.} =
 type
     SharedPtr*[T] = object
         ## Shared ownership reference counting pointer.
+        ## By default is nil
         val: ptr tuple[value: T, counter: Atomic[int]]
 
 proc decr[T](p: SharedPtr[T]) {.inline.} =
-    if p.val != nil:
-        # this `fetchSub` returns current val then subs
-        # so count == 0 means we're the last
-        if p.val.counter.fetchSub(1) == 0:
-            `=destroy`(p.val.value)
-            deallocShared(p.val)
+    {.cast(raises: []).}:
+        if p.val != nil:
+            # this `fetchSub` returns current val then subs
+            # so count == 0 means we're the last
+            if p.val.counter.fetchSub(1, moAcquireRelease) == 0:
+                `=destroy`(p.val.value)
+                deallocShared(p.val)
 
-when defined(nimAllowNonVarDestructor):
-    proc `=destroy`*[T](p: SharedPtr[T]) =
-        p.decr()
-else:
-    proc `=destroy`*[T](p: var SharedPtr[T]) =
-        p.decr()
+proc `=destroy`*[T](p: SharedPtr[T]) {.nodestroy.} =
+    p.decr()
 
 proc `=dup`*[T](src: SharedPtr[T]): SharedPtr[T] =
     if src.val != nil:
-        discard fetchAdd(src.val.counter, 1)
+        discard fetchAdd(src.val.counter, 1, moRelaxed)
     result.val = src.val
 
 proc `=copy`*[T](dest: var SharedPtr[T], src: SharedPtr[T]) =
     if src.val != nil:
-        discard fetchAdd(src.val.counter, 1)
+        discard fetchAdd(src.val.counter, 1, moRelaxed)
     `=destroy`(dest)
     dest.val = src.val
 
-proc newSharedPtr*[T](t: typedesc[T]): SharedPtr[T] =
+proc newSharedPtr*[T](val: sink T): SharedPtr[T] {.nodestroy.} =
     ## Returns a zero initialized shared pointer
     result.val = cast[typeof(result.val)](allocShared(sizeof(result.val[])))
     result.val[].counter.store(0)
+    result.val.value = val
 
 proc isNil*[T](p: SharedPtr[T]): bool {.inline.} =
     p.val == nil
@@ -115,3 +105,23 @@ proc borrowVal*[T](p: SharedPtr[T]): ptr T =
 proc restituteVal*[T](p: SharedPtr[T], val: ptr T) =
     if val != nil:
         p.decr()
+
+type
+    SharedPtrNoCopy*[T] = object
+        p: SharedPtr[T]
+
+proc disableCopy*[T](p: SharedPtr[T]): SharedPtrNoCopy[T] =
+    SharedPtrNoCopy[T](p: p)
+
+proc `=dup`*[T](src: SharedPtrNoCopy[T]): SharedPtrNoCopy[T] {.error.}
+
+proc `=copy`*[T](dest: var SharedPtrNoCopy[T], src: SharedPtrNoCopy[T]) {.error.}
+
+proc isNil*[T](p: SharedPtrNoCopy[T]): bool {.inline.} =
+    isNil(p.p)
+
+proc `[]`*[T](p: SharedPtrNoCopy[T]): var T {.inline.} =
+    `[]`(p.p)
+
+proc `[]=`*[T](p: SharedPtrNoCopy[T], val: sink T) {.inline.} =
+    `[]=`(p.p)

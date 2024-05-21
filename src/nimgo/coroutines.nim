@@ -147,8 +147,7 @@ proc `=destroy`*(coroObj: CoroutineObj) =
         dealloc(coroObj.exception)
 
 proc new*(OT: type Coroutine, entryFn: EntryFn, stacksize = DefaultStackSize): Coroutine =
-    result = newSharedPtr(CoroutineObj)
-    result[] = CoroutineObj(entryFn: entryFn)
+    result = newSharedPtr(CoroutineObj(entryFn: entryFn))
     var mcoCoroDescriptor = initMcoDescriptor(coroutineMain, stacksize.uint)
     mcoCoroDescriptor.user_data = result.getUnsafePtr()
     checkMcoReturnCode createMcoCoroutine(addr(result[].mcoCoroutine), addr mcoCoroDescriptor)
@@ -166,6 +165,13 @@ proc suspend*() =
     ## Suspend the actual running coroutine
     let frame = getFrameState()
     checkMcoReturnCode suspend(getActiveMco())
+    setFrameState(frame)
+
+proc suspend*(coro: Coroutine) =
+    ## Optimization to avoid calling getActiveMco() twice which has some overhead
+    ## Never use if coro is different than current coroutine
+    let frame = getFrameState()
+    checkMcoReturnCode suspend(coro[].mcoCoroutine)
     setFrameState(frame)
 
 proc getCurrentCoroutine*(): Coroutine =

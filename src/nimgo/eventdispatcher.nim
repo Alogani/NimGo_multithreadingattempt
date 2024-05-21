@@ -1,5 +1,5 @@
 import ./coroutines {.all.}
-import ./private/smartptrs
+import ./private/[atomics, smartptrs]
 import std/exitprocs
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
@@ -13,13 +13,6 @@ when defined(NimGoNoThread):
 else:
     const NimGoNoStart* {.booldefine.} = false
     ## Setting this flag prevents NimGo event loop from autostarting
-
-
-when defined(NimGoNoThread):
-    import ./private/atomicsfake
-else:
-    ## Needs to be compiled with -d:threadsafe --threads:on to avoid selectors early free
-    import ./private/atomics
 
 #[
     Event loop implementation close to how the nodejs/libuv one's works (for more details: https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick).

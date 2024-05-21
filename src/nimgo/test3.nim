@@ -1,14 +1,31 @@
-import ./private/threadqueue
+import aloganimisc/fasttest
+
+import std/options
+
+import ./coroutines {.all.}
+
+type MyObj = object
+    val: array[1024, int]
+
+var MyVal = MyObj()
 
 
-type OmyRef = ref object
-    val: int
+proc doReturnOption(): Option[MyObj] =
+    some(MyVal)
 
-var q = newThreadQueue[OmyRef]()
-for i in 1..10:
-    q.push(OmyRef(val: i))
+proc doReturn(): (MyObj, bool) =
+    (MyVal, true)
 
-while not q.empty():
-    echo repr q.pop()
+var Additionnier: int
 
-`=destroy`(q)
+runBench("doReturnOption"):
+    for i in 0..10_000:
+        Additionnier += doReturnOption().get().val.len()
+
+runBench("doReturn"):
+    for i in 0..10_000:
+        let data = move doReturn()
+        if data[1]:
+            Additionnier += doReturn()[0].val.len()
+
+echo Additionnier
