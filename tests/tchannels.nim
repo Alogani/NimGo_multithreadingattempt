@@ -10,10 +10,12 @@ template consumerProducerCode() {.dirty.} =
     proc producerFn() {.thread.} =
         for i in 0..3:
             discard sender.trySend(i)
+        sender.close()
 
     proc consumerFn() {.thread.} =
         for i in 0..3:
             check receiver.tryRecv().get() == i
+        check receiver.tryRecv().isNone()
 
 test "Coroutine Channel fill first":
     consumerProducerCode()

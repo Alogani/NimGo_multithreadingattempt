@@ -97,9 +97,9 @@ proc trySend*[T](chan: GoChanSender[T], data: sink T): bool =
 proc tryRecv*[T](chan: GoChanReceiver[T]): Option[T] =
     ## Return false if channel closed
     var isEmptyVal = IsEmpty
-    if chan[].closed:
-        return none(T)
-    if chan[].state.load() == IsEmpty:
+    if chan[].state.load() == isEmptyVal:
+        if chan[].closed:
+            return none(T)
         let currentCoro = getCurrentCoroutine() # Fast but not free
         if not currentCoro.isNil():
             if chan[].state.compareExchange(isEmptyVal, ReceiverSuspended):
@@ -108,8 +108,6 @@ proc tryRecv*[T](chan: GoChanReceiver[T]): Option[T] =
         else:
             if chan[].state.compareExchange(isEmptyVal, ReceiverWaiting):
                 discard
-    if chan[].closed:
-        return none(T)
     result = chan[].data.popFirst()
     if chan[].data.empty():
         chan[].state.store(IsEmpty)
@@ -118,7 +116,7 @@ proc tryRecv*[T](chan: GoChanReceiver[T]): Option[T] =
 
 iterator items*[T](chan: GoChanReceiver[T]): T {.inline.} =
     while true:
-        var data: T
-        if not chan.tryRecv(data):
+        let data = chan.tryRecv()
+        if data.isNone():
             break
-        yield data
+        yield data.unsafeGet()
