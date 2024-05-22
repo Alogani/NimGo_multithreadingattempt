@@ -42,7 +42,7 @@ proc add*[T](s: ThreadStack[T], val: sink T): bool =
         else:
             return false
 
-proc pop*[T](s: ThreadStack[T], val: var T): bool =
+proc pop*[T](s: ThreadStack[T]): bool =
     let oldTop = s[].top.load(moAcquire)
     if oldTop == 0:
         return false

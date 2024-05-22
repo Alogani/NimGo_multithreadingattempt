@@ -1,6 +1,8 @@
 import std/[options]
 import ./[atomics, smartptrs]
 
+import std/isolation
+
 export options
 
 ## Lock free (thread safe) queue implementation using linked list
@@ -19,7 +21,7 @@ type
 
 
 proc newThreadQueue*[T](): ThreadQueue[T] =
-    let node = cast[ptr Node[T]](allocShared(sizeof Node[T]))
+    let node = allocSharedAndSet(Node[T]())
     let atomicNode = newAtomic(node)
     return newSharedPtr(ThreadQueueObj[T](
         head: atomicNode,
@@ -35,11 +37,17 @@ proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
         currentNode = nextNode
 
 proc pushLast*[T](q: ThreadQueue[T], val: sink T) =
-    let newNode = cast[ptr Node[T]](allocShared(sizeof Node[T]))
     when defined(gcOrc):
         GC_runOrc()
     when T is ref:
         Gc_ref(val)
+    when T is string: # does that do something ?
+        var isolatedVal = isolate(val)
+        let val = extract(isolatedVal)
+    let newNode = allocSharedAndSet(Node[T](
+        val: val,
+        next: newAtomic[ptr Node[T]](nil)
+    ))
     newNode[] = Node[T](val: val)
     let prevTail = q[].tail.exchange(newNode, moAcquireRelease)
     prevTail[].next.store(newNode, moRelease)

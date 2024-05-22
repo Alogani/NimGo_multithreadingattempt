@@ -11,6 +11,11 @@ template checkNotNil*(p: pointer) =
             if p == nil:
                 raise newException(ValueError, "Attempt to read from nil")
 
+proc allocSharedAndSet*[T](val: sink T): ptr T {.nodestroy.} =
+    ## More efficient than allocShared0
+    result = cast[ptr T](allocShared(sizeof T))
+    result[] = move(val)
+
 type
     UniquePtr*[T] = object
         ## Non copyable pointer to a value of type `T` with exclusive ownership.
@@ -29,10 +34,12 @@ proc `=copy`*[T](dest: var UniquePtr[T], src: UniquePtr[T]) {.error.}
     ## The copy operation is disallowed for `UniquePtr`, it
     ## can only be moved.
 
-proc newUniquePtr*[T](t: typedesc[T]): UniquePtr[T] =
+proc newUniquePtr*[T](val: sink T): UniquePtr[T] {.nodestroy.} =
     ## Returns a unique pointer. It is not initialized,
     ## so reading from it before writing to it is undefined behaviour!
-    result.val = cast[ptr T](allocShared(sizeof(T)))
+    result.val = allocSharedAndSet[(T, Atomic[int])](
+        (val, newAtomic(0))
+    )
 
 proc isNil*[T](p: UniquePtr[T]): bool {.inline.} =
     p.val == nil
@@ -71,9 +78,9 @@ proc `=copy`*[T](dest: var SharedPtr[T], src: SharedPtr[T]) =
 
 proc newSharedPtr*[T](val: sink T): SharedPtr[T] {.nodestroy.} =
     ## Returns a zero initialized shared pointer
-    result.val = cast[typeof(result.val)](allocShared(sizeof(result.val[])))
-    result.val[].counter.store(0)
-    result.val.value = val
+    result.val = allocSharedAndSet[(T, Atomic[int])](
+        (val, newAtomic(0))
+    )
 
 proc isNil*[T](p: SharedPtr[T]): bool {.inline.} =
     p.val == nil
