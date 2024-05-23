@@ -5,16 +5,22 @@ import ../eventdispatcher
 
 type
     Task*[T] = ref object
-        coro: Coroutine[T]
+        coro: Coroutine
 
 proc goAsyncImpl(fn: proc()): Task[void] {.discardable.} =
     var coro = Coroutine.new(fn)
-    addToPending coro
+    if runningInAnotherThread():
+        registerExternCoro coro
+    else:
+        registerCoro coro
     return Task[void](coro: coro)
 
 proc goAsyncImpl[T](fn: proc(): T): Task[T] {.discardable.} =
     var coro = Coroutine.new(fn)
-    addToPending coro
+    if runningInAnotherThread():
+        registerExternCoro coro
+    else:
+        registerCoro coro
     return Task[T](coro: coro)
 
 macro goAsync*(fn: untyped): untyped =

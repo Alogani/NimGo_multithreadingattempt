@@ -2,7 +2,7 @@
 # With small tweaks
 # This doesn't use isolates, so uniqueness is not guaranted by the compiler
 
-import ./atomics
+import ./threadprimitives
 
 
 template checkNotNil*(p: pointer) =

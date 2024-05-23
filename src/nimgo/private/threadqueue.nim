@@ -1,7 +1,5 @@
 import std/[options]
-import ./[atomics, smartptrs]
-
-import std/isolation
+import ./[smartptrs, threadprimitives]
 
 export options
 
@@ -21,6 +19,7 @@ type
 
 
 proc newThreadQueue*[T](): ThreadQueue[T] =
+    {.warning: "TODO: is this first alloc necessary ?".}
     let node = allocSharedAndSet(Node[T]())
     let atomicNode = newAtomic(node)
     return newSharedPtr(ThreadQueueObj[T](
@@ -36,14 +35,14 @@ proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
         dealloc(currentNode)
         currentNode = nextNode
 
-proc pushLast*[T](q: ThreadQueue[T], val: sink T) =
+proc addLast*[T](q: ThreadQueue[T], val: sink T) =
     when defined(gcOrc):
         GC_runOrc()
+    {.warning: "TODO: Put string inside a ref object for safety".}
     when T is ref:
         Gc_ref(val)
     when T is string: # does that do something ?
-        var isolatedVal = isolate(val)
-        let val = extract(isolatedVal)
+        discard
     let newNode = allocSharedAndSet(Node[T](
         val: val,
         next: newAtomic[ptr Node[T]](nil)
@@ -67,5 +66,3 @@ proc popFirst*[T](q: ThreadQueue[T]): Option[T] =
 proc empty*[T](q: ThreadQueue[T]): bool =
     ## The atomicity cannot be guaranted
     return q[].head.load(moAcquire) == q[].tail.load(moAcquire)
-
-    

@@ -12,8 +12,10 @@ proc main() =
     discard openAsync(stdoutAsync, FileHandle(1), fmWrite)
 
     proc writeTest(afile: AsyncFile) =
-        var buf = "TO THE OUTPUT"
+        echo "Inside writeTest"
+        var buf = "TO THE OUTPUT\n"
         discard afile.writeBuffer(addr(buf[0]), buf.len())
+        echo "Has been writen"
     
     proc willWrite() =
         echo "Will write"

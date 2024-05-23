@@ -1,5 +1,6 @@
-import std/locks
-import ./[atomics, smartptrs]
+import ./[smartptrs, threadprimitives]
+
+{.warning: "Not implemented".}
 
 type
     ThreadStackObj[T] = object

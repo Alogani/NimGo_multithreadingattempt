@@ -90,7 +90,7 @@ proc resume(coro: ptr McoCoroutine): McoReturnCode {.importc: "mco_resume", head
 proc suspend(coro: ptr McoCoroutine): McoReturnCode {.importc: "mco_yield", header: minicoroh.}
 proc getState(coro: ptr McoCoroutine): McoCoroState {.importc: "mco_status", header: minicoroh.}
 proc getUserData(coro: ptr McoCoroutine): pointer {.importc: "mco_get_user_data", header: minicoroh.}
-proc getActiveMco(): ptr McoCoroutine {.importc: "mco_running", header: minicoroh.}
+proc getRunningMco(): ptr McoCoroutine {.importc: "mco_running", header: minicoroh.}
 proc prettyError(returnCode: McoReturnCode): cstring_const {.importc: "mco_result_description", header: minicoroh.}
 
 proc checkMcoReturnCode(returnCode: McoReturnCode) =
@@ -119,6 +119,9 @@ type
         exception: ptr Exception
 
     Coroutine* = SharedPtr[CoroutineObj]
+        ## Basic coroutine object
+        ## Thread safety: unstarted coroutine can be moved between threads
+        ## Moving started coroutine, using resume/suspend are completely thread unsafe in ORC (and maybe ARC too)
 
 proc coroutineMain(mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
@@ -164,11 +167,11 @@ proc resume*(coro: Coroutine) =
 proc suspend*() =
     ## Suspend the actual running coroutine
     let frame = getFrameState()
-    checkMcoReturnCode suspend(getActiveMco())
+    checkMcoReturnCode suspend(getRunningMco())
     setFrameState(frame)
 
 proc suspend*(coro: Coroutine) =
-    ## Optimization to avoid calling getActiveMco() twice which has some overhead
+    ## Optimization to avoid calling getRunningMco() twice which has some overhead
     ## Never use if coro is different than current coroutine
     let frame = getFrameState()
     checkMcoReturnCode suspend(coro[].mcoCoroutine)
@@ -177,7 +180,7 @@ proc suspend*(coro: Coroutine) =
 proc getCurrentCoroutine*(): Coroutine =
     ## Get the actual running coroutine
     ## If we are not inside a coroutine, nil is retuned
-    return toSharedPtr(CoroutineObj, getActiveMco().getUserData())
+    return toSharedPtr(CoroutineObj, getRunningMco().getUserData())
 
 proc getException*(coro: Coroutine): ref Exception =
     ## nil if state is different than CsDead

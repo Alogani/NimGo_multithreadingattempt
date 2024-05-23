@@ -2,7 +2,7 @@
 ## Blocking behaviour inside a couroutine suspend, otherwise main thread is blocked
 
 import ./coroutines
-import ./private/[atomics, smartptrs, threadqueue]
+import ./private/[smartptrs, threadprimitives, threadqueue]
 
 export options
 
@@ -51,8 +51,8 @@ proc newGoChannel2*[T](maxItems = 0): tuple[receiver: GoChanReceiver[T], sender:
 proc newGoChannel*[T](maxItems = 0): GoChan[T] =
     let chan = newSharedPtr(GoChanObj[T](
         data: newThreadQueue[T](),
-        suspendedThr)eadId: -1,
-    )
+        suspendedThreadId: -1,
+    ))
     result = GoChan[T](
         receiver: chan,
         sender: chan

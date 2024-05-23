@@ -1,22 +1,16 @@
-import ./[gochannels, coroutines]
+import ./coroutines
 
-template consumerProducerCode() {.dirty.} =
-    #var myChan = newGoChannel[string]()
-    let (receiver, sender) = newGoChannel2[int]()
+proc main() =
+    echo "in coro"
+    let coro = getCurrentCoroutine()
+    echo "resumed"
+    suspend(coro)
+    echo "resumed again"
 
-    proc producerFn() {.thread.} =
-        for i in 0..3:
-            discard sender.trySend(i)
-        sender.close()
-
-    proc consumerFn() {.thread.} =
-        for data in receiver:
-            echo data
-
-consumerProducerCode()
-let producerCoro = Coroutine.new(producerFn)
-let consumerCoro = Coroutine.new(consumerFn)
-consumerCoro.resume()
-producerCoro.resume()
-echo producerCoro.getState()
-echo consumerCoro.getState()
+let coro = Coroutine.new(main)
+coro.resume()
+echo "suspend 1"
+coro.suspend()
+echo "suspend 2"
+coro.suspend()
+coro.resume()
