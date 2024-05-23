@@ -440,7 +440,6 @@ proc suspendUntilRead*(fd: PollFd) =
     #if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
     addInsideSelector(fd, coro, Event.Read)
     suspend()
-    {.warning: "TOOD: add a fast poll (but bench it to see if worth it)".}
 
 proc suspendUntilWrite*(fd: PollFd) =
     ## If multiple coros are suspended for the same PollFd and one consume it, the others will deadlock

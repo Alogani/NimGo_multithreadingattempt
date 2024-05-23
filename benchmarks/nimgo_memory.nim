@@ -1,5 +1,5 @@
-import ../src/nimgo/public/task
-import ../src/nimgo/asyncio
+import nimgo/public/task
+import nimgo/asyncio
 
 const SpawnNumber = 1_000_000
 #[
