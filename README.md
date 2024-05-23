@@ -18,7 +18,8 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [X] Implements the possibility to run the Event loop in a second thread
 - [X] Implements the basic I/O operations for files
 - [ ] Implements the all I/O operations for files
-- [ ] Implements a "trampoline" style (aka like then for async/await)
+- [ ] Implements "GoSemaphore": a blocking primitive working on both coroutines and threads
+- [ ] Implements "GoChannel": a blocking queue on both coroutines and threads
 - [X] Implement the *goAsync* template to add a coroutine inside the event loop
 - [X] Introduce a *Task[T]* type as the return type of *goAsync*
 - [ ] Introduce some utilities for *Task[T]* :
@@ -27,10 +28,10 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
  - `proc waitAll[T](task: seq[Task[T]]): seq[T]`
  - `proc waitAny[T](task: seq[Task[T]])`
  - etc. ?
-- [ ] Implements the I/O operations for timers/process/events/signals
+- [X] Implements the I/O operations for timers/process/events/signals
 - [ ] Implements the basic I/O operations for sockets
 - [ ] Implements the all I/O operations for sockets
-- [ ] See if *Task[T]* can be converted to *Future[T]* from std/asyncdispatch to allow user to use both paradigm
+- [ ] See if an interoperability layer can be implemented between NimGo's *Task[T]* and std/asyncdispatch's *Future[T]*
 
 ## Comparisons with alternatives I/O handling paradigm
 
@@ -65,6 +66,7 @@ _The advantages and drawbacks are similar than comparing async/await with thread
     - I/O operations handling become implementation details, not polluting the end user
     - Compilation speed: almost no macro is necessary in coroutines implementation
   - Should be slightly faster _to confirm_
+  - Async/await uses many templates, which slow down the compilation (however mitigitated by incremental compilation)
 - **Drawbacks**:
     - More memory is consumed for each new Coroutine:
         - this can made it less suitable for very high demanding servers (basic benchmarks in nimgo/benchmarks show that async/await memory don't grow, whereas nimgo grows at a constant pace. However asyncdispatch crashed on higher loads)
@@ -72,21 +74,32 @@ _The advantages and drawbacks are similar than comparing async/await with thread
             - data doesn't need anymore to be encapsulated in a Future[T] object which is passed around
             - for most usages, the difference of memory usage should be barely noticeable (only 50 kB for 1K spawns)
     - The async nature of I/O operation is not explicit anymore. If a library uses blocking I/O and `goAsync` is used it will block the event loop
-    - The end user can't control as much the flow of operations
-    - Different paradigm: both are multi paradigm, but current async/await encourages a imperative style, whereas coroutines encourages a functional style
+    - Async/await allows more control on the data flow
 
-### Compared to CPS (continuation passing style)
+### Compared to CPS I/O library (continuation passing style)
 
-_having few knowledge of CPS, please take my assumptions with a grain of salt_
+_Having never coded with CPS, my point of view shall be taken with a grain of salt. Please let me know if some informations are wrong. But CPS seems like a cool project !_
+
+CPS in itself is a coding style/paradigm. In itself, it is not concurrent, but can be used to implements Stackless coroutines and to enable concurrency. To my knowledge, no I/O library with CPS has been implemented yet.
+
+Stackless and stackful coroutines should not be confused, as they design two very different way to suspend the execution of the code, but often people uses those terms interchangeably
+
+You can see https://github.com/nim-works/cps for more details, and I think [nimskull](https://github.com/nim-works/nimskull/pull/1249) are working on stackless coroutines with CPS 
+
 
 - **Advantages**:
-  - CPS seems to impose a paradigm for the whole codebase (like function coloring for async/await), whereas goAsync is multiparadigm
-  - Simpler to use
-  _To complete_
+  - CPS even if they don't directly colors functions, imposes a coding style
+  - CPS is more complex and requires to manually manage the control flow
+  - Therefore CPS is less intuitive, less readable, and more verbose
+  - CPS may be less interoperable with an existing sync codebase
+  - CPS might have a little computing overhead (not sure, it might be more efficient ?) due to more function calls and memory allocations
+  - CPS uses many templates, which slow down the compilation (however mitigitated by incremental compilation)
 - **Drawbacks**:
-  - Doesn't answer necessarly the same problematics
-  - CPS seems to excel in data flow between threads, whereas coroutines are very limited (and certainly GC unsafe) when passed between threads
-  _To complete_
+  - CPS answers some problematics beyond I/O (Doesn't answer necessarly the same problematics). It shines for example inside compilers
+  - CPS is efficient on memory and more suited in constrained environment
+  - CPS allow fine grained control of the data flow without hiding the details, and so is more flexible
+  - CPS might be easier to debug
+
 
 ## Example
 _The exact and definitive API is susceptible to change_
