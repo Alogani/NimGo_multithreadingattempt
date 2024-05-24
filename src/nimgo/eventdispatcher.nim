@@ -117,7 +117,7 @@ const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty
 const SleepMsIfEmpty = 50 # to avoid busy waiting. When the event loop is empty
 const CoroLimitByPhase = 30 # To avoid starving the coros inside the poll
 
-var DispatcherRunningInCurrentThread {.threadvar.}: bool
+var InsideDispatcherThread {.threadvar.}: bool
 var ActiveDispatcher {.threadvar.}: EvDispatcher
 
 proc newDispatcher*(): EvDispatcher
@@ -271,10 +271,10 @@ proc runEventLoop(
         raise newException(ValueError, "Cannot run the same event loop twice")
     let timeout = TimeOutWatcher.init(timeoutMs)
     dispatcher[].running = true
-    DispatcherRunningInCurrentThread = true
+    InsideDispatcherThread = true
     defer:
         dispatcher[].running = false
-        DispatcherRunningInCurrentThread = false
+        InsideDispatcherThread = false
         ActiveDispatcher = oldDispatcher
     while not timeout.expired:
         if dispatcher.isDispatcherEmpty():
@@ -289,6 +289,7 @@ when not defined(NimGoNoThread):
     proc runEventLoopThreadImpl(args: (int, EvDispatcher, BoolFlagRef)) {.thread.} =
         runEventLoop(args[0], args[1], args[2])
         
+
     proc spawnEventLoop*(
             timeoutMs = -1,
             dispatcher = ActiveDispatcher,
@@ -309,17 +310,13 @@ proc running*(dispatcher = ActiveDispatcher): bool =
     dispatcher[].running
 
 proc runningInAnotherThread*(dispatcher = ActiveDispatcher): bool =
-    not DispatcherRunningInCurrentThread and dispatcher[].running
-
-proc runningInsideDispatcher*(): bool =
-    ## Meaning that the 
-    DispatcherRunningInCurrentThread
+    dispatcher[].running and dispatcher == ActiveDispatcher and not InsideDispatcherThread
 
 #[ *** Coroutine API *** ]#
 
 proc registerExternCoro*(
-    dispatcher: EvDispatcher,
     coro: Coroutine,
+    dispatcher = ActiveDispatcher,
 ) =
     ## Thread safe, but only if coro were never started
     ## Register in the dispatcher of the same thread
@@ -453,7 +450,4 @@ proc suspendUntilWrite*(fd: PollFd) =
     suspend()
 
 when not defined(NimGoNoStart) and not defined(NimGoNoThread):
-    addExitProc(proc() =
-        if not running():
-            spawnEventLoop()
-    )
+    spawnEventLoop()

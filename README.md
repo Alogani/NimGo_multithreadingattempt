@@ -16,8 +16,8 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [X] Implements the stackful coroutine API
 - [X] Implements the Event loop API in the same thread
 - [X] Implements the possibility to run the Event loop in a second thread
-- [X] Implements some basic I/O operations for files
-- [ ] Implements all I/O operations for files
+- [X] Implements the basic I/O operations for files
+- [ ] Implements the all I/O operations for files
 - [ ] Implements "GoSemaphore": a blocking primitive working on both coroutines and threads
 - [ ] Implements "GoChannel": a blocking queue on both coroutines and threads
 - [X] Implement the *goAsync* template to add a coroutine inside the event loop
@@ -28,17 +28,12 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
  - `proc waitAll[T](task: seq[Task[T]]): seq[T]`
  - `proc waitAny[T](task: seq[Task[T]])`
  - etc. ?
-- [X] Implements I/O operations for timers/process/events/signals
-- [ ] Implements some basic I/O operations for sockets
-- [ ] Implements all I/O operations for sockets
+- [X] Implements the I/O operations for timers/process/events/signals
+- [ ] Implements the basic I/O operations for sockets
+- [ ] Implements the all I/O operations for sockets
 - [ ] See if an interoperability layer can be implemented between NimGo's *Task[T]* and std/asyncdispatch's *Future[T]*
 
-## Comparisons with alternatives I/O handling paradigms
-
-For simplicity, I will use the term "coroutines" to refer to "stackful coroutines". But they desugn two different techniques to suspend the execution flow:
-- Stackful coroutines, which are also called green threads or fibers. Stackful coroutines maintain their own call stack, allowing them to suspend and resume execution while preserving the state of local variables and function calls. This makes them more resource-intensive but more powerful for complex control flow. Languages like Go and Lua use stackful coroutines. (A noticeable fact about Go's goroutines: stack size is dynamically managed and OS threads are spawned as needed)
-- Stackless coroutines rely on different techniques, such as generators, to remember the state of execution. They often rely on compiler transformations to convert synchronous code into suspendable code. Stackless coroutines are more lightweight but have more limitations compared to stackful coroutines. Nim's async/await is an example of stackless coroutine.
-
+## Comparisons with alternatives I/O handling paradigm
 
 ### Compared to sync operations:
 
@@ -54,9 +49,9 @@ For simplicity, I will use the term "coroutines" to refer to "stackful coroutine
 _The advantages and drawbacks are similar than comparing async/await with threads_
 
 - **Advantages**:
-  - simpler to spawn, simpler to pass data between coroutines
+  - simpler to spawn, simpler to pass data between coroutines and have a result
   - more lightweight on memory
-  - No spawn limit (hundreds of thousands of coroutines can be spawned)
+  - No spawn limit (hundreds of thousands of courintes can be spawned)
   - faster for I/O
 - **Drawbacks**:
   - Code is not running parellelly (Doesn't answer necessarly the same problematics)
@@ -86,6 +81,8 @@ _The advantages and drawbacks are similar than comparing async/await with thread
 _Having never coded with CPS, my point of view shall be taken with a grain of salt. Please let me know if some informations are wrong. But CPS seems like a cool project !_
 
 CPS in itself is a coding style/paradigm. In itself, it is not concurrent, but can be used to implements Stackless coroutines and to enable concurrency. To my knowledge, no I/O library with CPS has been implemented yet.
+
+Stackless and stackful coroutines should not be confused, as they design two very different way to suspend the execution of the code, but often people uses those terms interchangeably
 
 You can see https://github.com/nim-works/cps for more details, and I think [nimskull](https://github.com/nim-works/nimskull/pull/1249) are working on stackless coroutines with CPS 
 

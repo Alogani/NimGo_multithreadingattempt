@@ -102,8 +102,6 @@ proc checkMcoReturnCode(returnCode: McoReturnCode) =
 
 import ./private/smartptrs
 
-export isNil
-
 type
     CoroState* = enum
         CsRunning ## Is the current main coroutine
@@ -135,7 +133,7 @@ proc coroutineMain(mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
         Gc_ref exception
         coroPtr.exception = cast[ptr Exception](exception)
 
-proc destroyMcoCoroutine(coroObj: CoroutineObj) =
+proc destroyMoCoroutine(coroObj: CoroutineObj) =
     checkMcoReturnCode uninitMcoCoroutine(coroObj.mcoCoroutine)
     checkMcoReturnCode destroyMco(coroObj.mcoCoroutine)
 
@@ -145,14 +143,13 @@ proc `=destroy`*(coroObj: CoroutineObj) =
     ## It is better to avoid destroy and resume the coroutine until the end to avoid GC
     if coroObj.mcoCoroutine != nil:
         try:
-            destroyMcoCoroutine(coroObj)
+            destroyMoCoroutine(coroObj)
         except:
             discard
     if coroObj.exception != nil:
         dealloc(coroObj.exception)
 
 proc new*(OT: type Coroutine, entryFn: EntryFn, stacksize = DefaultStackSize): Coroutine =
-    ## Using Coroutine() constructor result in a "nil" coroutine `isNil() == true`
     result = newSharedPtr(CoroutineObj(entryFn: entryFn))
     var mcoCoroDescriptor = initMcoDescriptor(coroutineMain, stacksize.uint)
     mcoCoroDescriptor.user_data = result.getUnsafePtr()
