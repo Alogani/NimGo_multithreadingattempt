@@ -1,27 +1,27 @@
-import nimgo/[coroutines, gochannels]
+import nimgo/[eventdispatcher, coroutines, gochannels]
 import os
 
 import std/unittest
 
 template consumerProducerCode(T: typedesc) {.dirty.} =
     #var myChan = newGoChannel[string]()
-    let (receiver, sender) = newGoChannel2[T]()
+    let chan = newGoChannel[T]()
 
     proc producerFn() {.thread.} =
         for i in 0..3:
             when T is int:
-                discard sender.trySend(i)
+                discard chan.send(i)
             else:
-                discard sender.trySend("data=" & $i)
-        sender.close()
+                discard chan.send("data=" & $i)
+        chan.close()
 
     proc consumerFn() {.thread.} =
         for i in 0..3:
             when T is int:
-                check receiver.tryRecv().get() == i
+                check chan.recv().get() == i
             else:
-                check receiver.tryRecv().get() == ("data=" & $i)
-        check receiver.tryRecv().isNone()
+                check chan.recv().get() == ("data=" & $i)
+        check chan.recv().isNone()
 
 test "Coroutine Channel fill first":
     template main(T: typedesc) =
@@ -29,10 +29,8 @@ test "Coroutine Channel fill first":
             consumerProducerCode(T)
             let producerCoro = Coroutine.new(producerFn)
             let consumerCoro = Coroutine.new(consumerFn)
-            producerCoro.resume()
-            consumerCoro.resume()
-            check producerCoro.getState() == CsFinished
-            check consumerCoro.getState() == CsFinished
+            registerCoro producerCoro
+            registerCoro consumerCoro
     suite "int": main(int)
     suite "string": main(string)
 
@@ -42,10 +40,8 @@ test "Coroutine Channel interleaved":
             consumerProducerCode(T)
             let producerCoro = Coroutine.new(producerFn)
             let consumerCoro = Coroutine.new(consumerFn)
-            consumerCoro.resume()
-            producerCoro.resume()
-            check producerCoro.getState() == CsFinished
-            check consumerCoro.getState() == CsFinished
+            registerCoro producerCoro
+            registerCoro consumerCoro
     suite "int": main(int)
     suite "string": main(string)
 
