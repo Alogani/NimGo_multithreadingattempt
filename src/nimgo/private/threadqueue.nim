@@ -41,13 +41,13 @@ proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
         when T is ref or T is string or T is seq:
             # when T is string or T is seq, we dealloc GcRefContainer[T]
             if currentNode[].val != nil:
-                dealloc(cast[pointer](currentNode[].val))
-        dealloc(currentNode)
+                deallocShared(cast[pointer](currentNode[].val))
+        deallocShared(currentNode)
         currentNode = nextNode
 
 proc addLast*[T](q: ThreadQueue[T], val: sink T) =
-    #when defined(gcOrc):
-    #    GC_runOrc()
+    when defined(gcOrc):
+        GC_runOrc()
     when T is ref:
         Gc_ref(val)
     when T is string or T is seq:
@@ -74,8 +74,7 @@ proc popFirst*[T](q: ThreadQueue[T]): Option[T] =
             when T is ref:
                 Gc_unref(val)
         result = some(move(val))
-        
-        dealloc(oldHead)
+        deallocShared(oldHead)
         return
 
 proc empty*[T](q: ThreadQueue[T]): bool =

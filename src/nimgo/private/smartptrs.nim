@@ -25,6 +25,7 @@ proc `=destroy`*[T](p: UniquePtr[T]) =
     if p.val != nil:
         `=destroy`(p.val[])
         deallocShared(p.val)
+        addr(p.val)[] = nil
 
 proc `=dup`*[T](src: UniquePtr[T]): UniquePtr[T] {.error.}
     ## The dup operation is disallowed for `UniquePtr`, it
@@ -61,7 +62,13 @@ proc decr[T](p: SharedPtr[T]) {.inline.} =
             if p.val.counter.fetchSub(1, moAcquireRelease) == 0:
                 `=destroy`(p.val.value)
                 deallocShared(p.val)
-                #addr(p.val)[] = nil
+                addr(p.val)[] = nil
+
+proc RefInc*[T](p: SharedPtr[T]) =
+    p.val.counter.atomicInc()
+
+proc RefDec*[T](p: SharedPtr[T]) =
+    p.decr()
 
 proc `=destroy`*[T](p: SharedPtr[T]) {.nodestroy.} =
     p.decr()
@@ -74,7 +81,8 @@ proc `=dup`*[T](src: SharedPtr[T]): SharedPtr[T] =
 proc `=copy`*[T](dest: var SharedPtr[T], src: SharedPtr[T]) =
     if src.val != nil:
         discard fetchAdd(src.val.counter, 1, moRelaxed)
-    `=destroy`(dest)
+    if dest.val != nil:
+        `=destroy`(dest)
     dest.val = src.val
 
 proc newSharedPtr*[T](val: sink T): SharedPtr[T] {.nodestroy.} =

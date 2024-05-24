@@ -3,8 +3,8 @@ import os
 
 import std/unittest
 
+import nimgo/private/[smartptrs, threadqueue]
 
-import nimgo/private/smartptrs
 template consumerProducerCode[T](chan: GoChan[T]) {.dirty.} =
     proc producerFn[T]() {.thread.} =
         for i in 0..3:
@@ -13,6 +13,7 @@ template consumerProducerCode[T](chan: GoChan[T]) {.dirty.} =
             else:
                 discard chan.send("data=" & $i)
         chan.close()
+        chan.RefDec()
 
     proc consumerFn[T]() {.thread.} =
         for i in 0..3:
@@ -27,7 +28,7 @@ test "Coroutine Channel fill first":
     template main(T: typedesc) =
         block:
             var chan = newGoChannel[T]()
-            consumerProducerCode(chan)
+            consumerProducerCode[T](chan)
             let producerCoro = Coroutine.new(producerFn[T])
             let consumerCoro = Coroutine.new(consumerFn[T])
             registerCoro producerCoro
@@ -35,17 +36,19 @@ test "Coroutine Channel fill first":
     suite "int": main(int)
     suite "string": main(string)
 
+
 test "Coroutine Channel interleaved":
     template main(T: typedesc) =
         block:
             var chan = newGoChannel[T]()
-            consumerProducerCode(chan)
+            consumerProducerCode[T](chan)
             let producerCoro = Coroutine.new(producerFn[T])
             let consumerCoro = Coroutine.new(consumerFn[T])
             registerCoro producerCoro
             registerCoro consumerCoro
     suite "int": main(int)
     suite "string": main(string)
+
 
 test "Thread channel fill first":
     template main(T: typedesc) =
@@ -76,5 +79,5 @@ test "Thread channel interleaved":
     suite "int": main(int)
     suite "string": main(string)
 
-when not defined(NimGoNoStart):
+when defined(NimGoNoStart):
     runEventLoop()

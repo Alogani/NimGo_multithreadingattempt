@@ -8,7 +8,7 @@ export options
 
 type
     GoChanObj[T] = object
-        queue: ThreadQueue[T]
+        queue*: ThreadQueue[T]
         semaphore: GoSemaphore
         closed: bool
 
