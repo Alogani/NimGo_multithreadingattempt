@@ -61,6 +61,7 @@ proc decr[T](p: SharedPtr[T]) {.inline.} =
             if p.val.counter.fetchSub(1, moAcquireRelease) == 0:
                 `=destroy`(p.val.value)
                 deallocShared(p.val)
+                #addr(p.val)[] = nil
 
 proc `=destroy`*[T](p: SharedPtr[T]) {.nodestroy.} =
     p.decr()
@@ -132,3 +133,9 @@ proc `[]`*[T](p: SharedPtrNoCopy[T]): var T {.inline.} =
 
 proc `[]=`*[T](p: SharedPtrNoCopy[T], val: sink T) {.inline.} =
     `[]=`(p.p)
+
+template checkNotNil*[T](p: SharedPtr[T]) =
+    when compileOption("boundChecks"):
+        {.line.}:
+            if p.isNil():
+                raise newException(ValueError, "Attempt to read from nil")

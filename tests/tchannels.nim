@@ -3,11 +3,10 @@ import os
 
 import std/unittest
 
-template consumerProducerCode(T: typedesc) {.dirty.} =
-    #var myChan = newGoChannel[string]()
-    let chan = newGoChannel[T]()
 
-    proc producerFn() {.thread.} =
+import nimgo/private/smartptrs
+template consumerProducerCode[T](chan: GoChan[T]) {.dirty.} =
+    proc producerFn[T]() {.thread.} =
         for i in 0..3:
             when T is int:
                 discard chan.send(i)
@@ -15,7 +14,7 @@ template consumerProducerCode(T: typedesc) {.dirty.} =
                 discard chan.send("data=" & $i)
         chan.close()
 
-    proc consumerFn() {.thread.} =
+    proc consumerFn[T]() {.thread.} =
         for i in 0..3:
             when T is int:
                 check chan.recv().get() == i
@@ -23,12 +22,14 @@ template consumerProducerCode(T: typedesc) {.dirty.} =
                 check chan.recv().get() == ("data=" & $i)
         check chan.recv().isNone()
 
+
 test "Coroutine Channel fill first":
     template main(T: typedesc) =
         block:
-            consumerProducerCode(T)
-            let producerCoro = Coroutine.new(producerFn)
-            let consumerCoro = Coroutine.new(consumerFn)
+            var chan = newGoChannel[T]()
+            consumerProducerCode(chan)
+            let producerCoro = Coroutine.new(producerFn[T])
+            let consumerCoro = Coroutine.new(consumerFn[T])
             registerCoro producerCoro
             registerCoro consumerCoro
     suite "int": main(int)
@@ -37,9 +38,10 @@ test "Coroutine Channel fill first":
 test "Coroutine Channel interleaved":
     template main(T: typedesc) =
         block:
-            consumerProducerCode(T)
-            let producerCoro = Coroutine.new(producerFn)
-            let consumerCoro = Coroutine.new(consumerFn)
+            var chan = newGoChannel[T]()
+            consumerProducerCode(chan)
+            let producerCoro = Coroutine.new(producerFn[T])
+            let consumerCoro = Coroutine.new(consumerFn[T])
             registerCoro producerCoro
             registerCoro consumerCoro
     suite "int": main(int)
@@ -48,25 +50,31 @@ test "Coroutine Channel interleaved":
 test "Thread channel fill first":
     template main(T: typedesc) =
         block:
-            consumerProducerCode(T)
+            var chan = newGoChannel[T]()
+            consumerProducerCode(chan)
             var producerThread: Thread[void]
             var consumerThread: Thread[void]
-            createThread(producerThread, producerFn)
+            createThread(producerThread, producerFn[T])
             sleep(100)
-            createThread(consumerThread, consumerFn)
+            createThread(consumerThread, consumerFn[T])
             joinThreads(producerThread, consumerThread)
     suite "int": main(int)
     suite "string": main(string)
 
+
 test "Thread channel interleaved":
     template main(T: typedesc) =
         block:
-            consumerProducerCode(T)
+            var chan = newGoChannel[T]()
+            consumerProducerCode(chan)
             var producerThread: Thread[void]
             var consumerThread: Thread[void]
-            createThread(consumerThread, consumerFn)
+            createThread(consumerThread, consumerFn[T])
             sleep(100)
-            createThread(producerThread, producerFn)
+            createThread(producerThread, producerFn[T])
             joinThreads(producerThread, consumerThread)
     suite "int": main(int)
     suite "string": main(string)
+
+when not defined(NimGoNoStart):
+    runEventLoop()

@@ -46,8 +46,8 @@ proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
         currentNode = nextNode
 
 proc addLast*[T](q: ThreadQueue[T], val: sink T) =
-    when defined(gcOrc):
-        GC_runOrc()
+    #when defined(gcOrc):
+    #    GC_runOrc()
     when T is ref:
         Gc_ref(val)
     when T is string or T is seq:
@@ -57,15 +57,15 @@ proc addLast*[T](q: ThreadQueue[T], val: sink T) =
         val: val,
         next: newAtomic[ptr Node[T]](nil)
     ))
-    let prevTail = q[].tail.exchange(newNode, moAcquireRelease)
-    prevTail[].next.store(newNode, moRelease)
+    let prevTail = q[].tail.exchange(newNode)
+    prevTail[].next.store(newNode)
 
 proc popFirst*[T](q: ThreadQueue[T]): Option[T] =
     var oldHead = q[].head.load(moAcquire)
     let newHead = oldHead[].next.load(moAcquire)
     if newHead == nil:
         return none(T)
-    if q[].head.compareExchange(oldHead, newHead, moAcquireRelease):
+    if q[].head.compareExchange(oldHead, newHead):
         when T is string or T is seq:
             var val = newHead[].val.val
             Gc_unref(newHead[].val)

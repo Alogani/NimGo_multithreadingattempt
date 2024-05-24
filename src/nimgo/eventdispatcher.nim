@@ -252,7 +252,7 @@ proc runOnce(timeoutMs: int) =
         ActiveDispatcher[].closeCoros.popFirst().resume()
         processNextTickCoros(timeout)
 
-proc runEventLoop(
+proc runEventLoop*(
         timeoutMs = -1,
         dispatcher = ActiveDispatcher,
         stopWhenEmpty = BoolFlagRef(value: true)
@@ -453,7 +453,4 @@ proc suspendUntilWrite*(fd: PollFd) =
     suspend()
 
 when not defined(NimGoNoStart) and not defined(NimGoNoThread):
-    addExitProc(proc() =
-        if not running():
-            spawnEventLoop()
-    )
+    spawnEventLoop()

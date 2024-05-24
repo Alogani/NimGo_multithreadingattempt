@@ -25,7 +25,9 @@ proc newGoSemaphore*(initialValue = 0): GoSemaphore =
         cond: cond,
     ))
 
-proc waitImpl(self: GoSemaphore) =
+proc wait*(self: GoSemaphore) =
+    if fetchSub(self[].counter, 1) > 0:
+        return
     if runningInsideDispatcher():
         let currentCoro = getCurrentCoroutine()
         self[].waitersQueue.addLast (currentCoro, getCurrentThreadDispatcher())
@@ -35,11 +37,6 @@ proc waitImpl(self: GoSemaphore) =
         self[].waitersQueue.addLast (Coroutine(), EvDispatcher())
         wait(self[].cond, self[].lock)
         self[].lock.release()
-
-proc wait*(self: GoSemaphore) =
-    if fetchSub(self[].counter, 1) > 0:
-        return
-    self.waitImpl
 
 proc tryWait*(self: GoSemaphore): bool =
     ## Won't be put to sleep. return true is semaphore have been acquired, else false
