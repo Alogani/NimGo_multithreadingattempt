@@ -2,58 +2,58 @@
 ## Blocking behaviour inside a couroutine suspend, otherwise main thread is blocked
 
 import ./[gosemaphores]
-import ../private/[smartptrs, threadprimitives, threadqueueobj]
+import ../private/[smartptrs, threadprimitives, threadqueue]
 
 export options
 
 type
     GoChanObj[T] = object
-        queue*: ThreadQueueObj[T]
+        queue*: ThreadQueue[T]
         semaphore: GoSemaphore
-        closed: ptr bool
+        closed: bool
 
-    GoChan*[T] = GoChanObj[T] #SharedPtr[GoChanObj[T]]
+    GoChan*[T] = SharedPtr[GoChanObj[T]]
         ## Channel object that can be exchanged both between threads and coroutines
         ## Coroutines can only be suspended if they belong to a dispatcher/event loop. Otherwise the whole thread will block
 
 
 proc newGoChannel*[T](maxItems = 0): GoChan[T] =
-    return GoChan[T](
+    return newSharedPtr(GoChanObj[T](
         queue: newThreadQueue[T](),
         semaphore: newGoSemaphore(),
-        closed: allocSharedAndSet(false)
-    )
+        closed: false
+    ))
 
 proc close*[T](chan: var GoChan[T]) =
-    chan.closed[] = true
-    chan.semaphore.signalUpTo(1)
+    chan[].closed = true
+    chan[].semaphore.signalUpTo(1)
 
 proc closed*[T](chan: var GoChan[T]) =
-    chan.closed[]
+    chan[].closed
 
 proc send*[T](chan: var GoChan[T], data: sink T): bool =
     ## Return false if channel closed
-    if chan.closed[]:
+    if chan[].closed:
         return false
-    chan.queue.addLast data
-    chan.semaphore.signal()
+    chan[].queue.addLast data
+    chan[].semaphore.signal()
 
 proc tryRecv*[T](chan: var GoChan[T]): Option[T] =
     ## Non blocking
     ## Return false if channel is closed or data is not available
-    if not chan.semaphore.tryWait():
+    if not chan[].semaphore.tryWait():
         return none(T)
-    return chan.queue.popFirst()
+    return chan[].queue.popFirst()
 
 proc recv*[T](chan: var GoChan[T]): Option[T] =
     ## Blocking
     ## Return false if channel is closed
-    if chan.closed[]:
-        if not chan.semaphore.tryWait():
+    if chan[].closed:
+        if not chan[].semaphore.tryWait():
             return none(T)
     else:
-        chan.semaphore.wait()
-    return chan.queue.popFirst()
+        chan[].semaphore.wait()
+    return chan[].queue.popFirst()
 
 iterator items*[T](chan: var GoChan[T]): T {.inline.} =
     while true:
