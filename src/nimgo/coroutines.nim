@@ -133,17 +133,19 @@ proc coroutineMain[T](mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
     let coroPtr = cast[ptr CoroutineObj](mcoCoroutine.getUserData())
     try:
-        let entryFn = cast[SafeContainer[T]](coroPtr[].entryFn).toVal()
+        let entryFn = cast[SafeContainer[T]](coroPtr[].entryFn).peek()
+        # Peek only to avoid Gc to trigger to early
         when hasReturnVal(entryFn):
             let res = entryFn()
             coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
         else:
             entryFn()
-
     except CatchableError:
         let exception = getCurrentException()
         Gc_ref exception
         coroPtr.exception = cast[ptr Exception](exception)
+    finally:
+        coroPtr[].entryFn.destroy()
 
 proc destroyMcoCoroutine(coroObj: CoroutineObj) =
     checkMcoReturnCode uninitMcoCoroutine(coroObj.mcoCoroutine)

@@ -21,6 +21,16 @@ proc toContainer*[T](val: sink T): SafeContainer[T] =
         Gc_ref(val)
     return SafeContainer[T](val: val)
 
+proc peek*[T](container: SafeContainer[T]): T =
+    ## Doesnot free memory
+    when T is ref:
+        result = container.val
+    elif mustGoInsideRef(T):
+        let gcContainer = container.val
+        result = gcContainer.val
+    else:
+        result = container.val
+
 proc toVal*[T](container: sink SafeContainer[T]): T =
     when T is ref:
         result = move(container.val)
@@ -33,14 +43,14 @@ proc toVal*[T](container: sink SafeContainer[T]): T =
         result = move(container.val)
 
 proc isNil*[T](container: SafeContainer[T]): bool =
-    when T is ref or T is string or T is seq:
+    when mustGoInsideRef(T):
         container.val == nil
     else:
         false
 
 proc destroy*[T](container: SafeContainer[T]) =
     ## Not needed if toVal has been called
-    when T is ref or T is string or T is seq:
+    when mustGoInsideRef(T):
         if container.val != nil:
             GC_unref(container.val)
     else:
