@@ -1,12 +1,13 @@
 import std/macros
 
-import ../coroutines
-import ../eventdispatcher
+import ../[coroutines, eventdispatcher]
+import ./gochannels
 
 type
     GoTask*[T] = ref object
-        coro: Coroutine
+        chan: GoChan[T]
 
+#[
 proc goAsyncImpl(fn: proc()): GoTask[void] {.discardable.} =
     var coro = Coroutine.new(fn)
     if runningInAnotherThread():
@@ -14,6 +15,7 @@ proc goAsyncImpl(fn: proc()): GoTask[void] {.discardable.} =
     else:
         registerCoro coro
     return GoTask[void](coro: coro)
+]#
 
 proc goAsyncImpl[T](fn: proc(): T): GoTask[T] {.discardable.} =
     var coro = Coroutine.new(fn)

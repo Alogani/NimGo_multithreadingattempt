@@ -64,12 +64,6 @@ proc decr[T](p: SharedPtr[T]) {.inline.} =
                 deallocShared(p.val)
                 addr(p.val)[] = nil
 
-proc RefInc*[T](p: SharedPtr[T]) =
-    p.val.counter.atomicInc()
-
-proc RefDec*[T](p: SharedPtr[T]) =
-    p.decr()
-
 proc `=destroy`*[T](p: SharedPtr[T]) {.nodestroy.} =
     p.decr()
 
