@@ -16,6 +16,10 @@ proc allocSharedAndSet*[T](val: sink T): ptr T {.nodestroy.} =
     result = cast[ptr T](allocShared(sizeof T))
     result[] = move(val)
 
+proc deallocSharedAndSetNil*(p: var pointer) =
+    deallocShared(p)
+    p = nil
+
 type
     UniquePtr*[T] = object
         ## Non copyable pointer to a value of type `T` with exclusive ownership.

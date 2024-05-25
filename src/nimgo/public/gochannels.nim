@@ -17,7 +17,7 @@ type
         ## Coroutines can only be suspended if they belong to a dispatcher/event loop. Otherwise the whole thread will block
 
 proc newGoChannel*[T](maxItems = 0): GoChan[T] =
-    result = newSharedPtr(GoChanObj[T](
+    return newSharedPtr(GoChanObj[T](
         queue: newThreadQueue[T](),
         semaphore: newGoSemaphore(),
         closed: false,

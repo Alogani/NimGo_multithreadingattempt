@@ -10,7 +10,6 @@ type
     Node[T] = object
         val: SafeContainer[T]
         next: Atomic[ptr Node[T]]
-        isAllocated: bool
 
     ThreadQueueObj[T] = object
         head: Atomic[ptr Node[T]]

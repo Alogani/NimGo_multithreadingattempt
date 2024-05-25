@@ -20,7 +20,6 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [ ] Implements all the I/O operations for files
 - [X] Implements "GoSemaphore": a blocking primitive working on both coroutines and threads
 - [X] Implements "GoChannel": a blocking queue working on both coroutines and threads
-- [ ] Allow to smoothly pass data into coroutines (like closures) thread safely
 - [X] Implement the *goAsync* template to add a coroutine inside the event loop
 - [X] Introduce a *Task[T]* type as the return type of *goAsync*
 - [ ] Introduce some utilities for *Task[T]* :

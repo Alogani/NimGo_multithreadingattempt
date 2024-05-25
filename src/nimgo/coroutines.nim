@@ -100,7 +100,7 @@ proc checkMcoReturnCode(returnCode: McoReturnCode) =
 
 #[ ********* API ********* ]#
 
-import ./private/smartptrs
+import ./private/[safecontainer, smartptrs]
 
 export isNil
 
@@ -112,11 +112,13 @@ type
         CsFinished
         CsDead ## Finished with an error
     
-    EntryFn = proc()
+    EntryFn[T] = proc(): T
         ## Supports at least closure and nimcall calling convention
 
     CoroutineObj = object
-        entryFn: EntryFn
+        entryFnRaw: pointer
+        entryFnEnv: pointer
+        returnedVal: pointer
         mcoCoroutine: ptr McoCoroutine
         exception: ptr Exception
 
@@ -125,12 +127,25 @@ type
         ## Thread safety: unstarted coroutine can be moved between threads
         ## Moving started coroutine, using resume/suspend are completely thread unsafe in ORC (and maybe ARC too)
 
-proc coroutineMain(mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
+proc coroutineMain[T](mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
     let coroPtr = cast[ptr CoroutineObj](mcoCoroutine.getUserData())
     try:
-        coroPtr.entryFn()
-    except:
+        if coroPtr[].entryFnEnv == nil:
+            let entryFn = cast[proc(): T {.nimcall.}](coroPtr[].entryFnRaw)
+            when T is void:
+                entryFn()
+            else:
+                let res = entryFn()
+                coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
+        else:
+            let entryFn = cast[proc(env: pointer): T {.nimcall.}](coroPtr[].entryFnRaw)
+            when T is void:
+                entryFn(coroPtr[].entryFnEnv)
+            else:
+                let res = entryFn(coroPtr[].entryFnEnv)
+                coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
+    except CatchableError:
         let exception = getCurrentException()
         Gc_ref exception
         coroPtr.exception = cast[ptr Exception](exception)
@@ -150,13 +165,30 @@ proc `=destroy`*(coroObj: CoroutineObj) =
             discard
     if coroObj.exception != nil:
         dealloc(coroObj.exception)
+    if coroObj.returnedVal != nil:
+        deallocShared(coroObj.returnedVal)
 
-proc new*(OT: type Coroutine, entryFn: EntryFn, stacksize = DefaultStackSize): Coroutine =
+proc newCoroutineImpl[T](entryFn: EntryFn[T], stacksize: int): Coroutine =
     ## Using Coroutine() constructor result in a "nil" coroutine `isNil() == true`
-    result = newSharedPtr(CoroutineObj(entryFn: entryFn))
-    var mcoCoroDescriptor = initMcoDescriptor(coroutineMain, stacksize.uint)
+    when entryFn is proc(): T {.closure.}:
+        result = newSharedPtr(CoroutineObj(
+            entryFnRaw: rawProc(entryFn),
+            entryFnEnv: rawEnv(entryFn),
+        ))
+    else:
+        result = newSharedPtr(CoroutineObj(
+            entryFnRaw: cast[pointer](entryFn),
+            entryFnEnv: nil,
+        ))
+    var mcoCoroDescriptor = initMcoDescriptor(coroutineMain[T], stacksize.uint)
     mcoCoroDescriptor.user_data = result.getUnsafePtr()
     checkMcoReturnCode createMcoCoroutine(addr(result[].mcoCoroutine), addr mcoCoroDescriptor)
+
+proc newCoroutine*[T](entryFn: EntryFn[T], stacksize = DefaultStackSize): Coroutine =
+    newCoroutineImpl[T](entryFn, stacksize)
+
+proc newCoroutine*(entryFn: EntryFn[void], stacksize = DefaultStackSize): Coroutine =
+    newCoroutineImpl[void](entryFn, stacksize)
 
 proc resume*(coro: Coroutine) =
     ## Will resume the coroutine where it stopped (or start it).
@@ -184,6 +216,12 @@ proc getCurrentCoroutine*(): Coroutine =
     ## Get the actual running coroutine
     ## If we are not inside a coroutine, nil is retuned
     return toSharedPtr(CoroutineObj, getRunningMco().getUserData())
+
+proc getReturnVal*[T](coro: Coroutine): T =
+    if coro[].returnedVal == nil:
+        raise newException(ValueError, "Coroutine don't have a return value or is not finished")
+    result = cast[ptr SafeContainer[T]](coro[].returnedVal)[].toVal()
+    deallocSharedAndSetNil(coro[].returnedVal)
 
 proc getException*(coro: Coroutine): ref Exception =
     ## nil if state is different than CsDead

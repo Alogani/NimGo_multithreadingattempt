@@ -19,6 +19,7 @@ proc goAsyncImpl(fn: proc()): GoTask[void] {.discardable.} =
 
 proc goAsyncImpl[T](fn: proc(): T): GoTask[T] {.discardable.} =
     var coro = Coroutine.new(fn)
+    var chan = newGoChannel[T]()
     if runningInAnotherThread():
         getCurrentThreadDispatcher().registerExternCoro coro
     else:
@@ -28,13 +29,6 @@ proc goAsyncImpl[T](fn: proc(): T): GoTask[T] {.discardable.} =
 macro goAsync*(fn: untyped): untyped =
     # Hard to do it without macro
     # But this one is fast to compile (and called less often than async/await)
-    case fn.kind
-    of nnkCall:
-        return quote do:
-            goAsyncImpl proc(): auto =
-                `fn`
-    of nnkIdent:
-        return quote do:
-            goAsyncImpl `fn`
-    else:
-        error("Provide a function")
+    return quote do:
+        goAsyncImpl proc(): auto =
+            `fn`

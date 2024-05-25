@@ -1,5 +1,7 @@
 import nimgo
 
+{.warning: "This is hypothetical examples. NimGo is stil under development".}
+
 ## # Basic I/O
 proc readAndPrint(file: AsyncFile) =
     var data: string
