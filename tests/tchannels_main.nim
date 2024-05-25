@@ -22,8 +22,8 @@ test "Coroutine Channel fill first":
                 else:
                     check chan.recv().get() == ("data=" & $i)
             check chan.recv().isNone()
-        let producerCoro = Coroutine.new(proc() = producerFn[T](chan))
-        let consumerCoro = Coroutine.new(proc() = consumerFn[T](chan))
+        let producerCoro = newCoroutine(proc() = producerFn[T](chan))
+        let consumerCoro = newCoroutine(proc() = consumerFn[T](chan))
         registerExternCoro(getCurrentThreadDispatcher(), producerCoro)
         registerExternCoro(getCurrentThreadDispatcher(), consumerCoro)
     main[int]()
@@ -47,8 +47,8 @@ test "Coroutine Channel interleaved":
                 else:
                     check chan.recv().get() == ("data=" & $i)
             check chan.recv().isNone()
-        let producerCoro = Coroutine.new(proc() = producerFn[T](chan))
-        let consumerCoro = Coroutine.new(proc() = consumerFn[T](chan))
+        let producerCoro = newCoroutine(proc() = producerFn[T](chan))
+        let consumerCoro = newCoroutine(proc() = consumerFn[T](chan))
         registerExternCoro(getCurrentThreadDispatcher(), consumerCoro)
         registerExternCoro(getCurrentThreadDispatcher(), producerCoro)
     main[int]()

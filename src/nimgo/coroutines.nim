@@ -116,8 +116,7 @@ type
         ## Supports at least closure and nimcall calling convention
 
     CoroutineObj = object
-        entryFnRaw: pointer
-        entryFnEnv: pointer
+        entryFn: SafeContainer[void]
         returnedVal: pointer
         mcoCoroutine: ptr McoCoroutine
         exception: ptr Exception
@@ -127,24 +126,20 @@ type
         ## Thread safety: unstarted coroutine can be moved between threads
         ## Moving started coroutine, using resume/suspend are completely thread unsafe in ORC (and maybe ARC too)
 
+template hasReturnVal[T](fn: proc(): T): bool = true
+template hasReturnVal(fn: proc()): bool = false
+
 proc coroutineMain[T](mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
     let coroPtr = cast[ptr CoroutineObj](mcoCoroutine.getUserData())
     try:
-        if coroPtr[].entryFnEnv == nil:
-            let entryFn = cast[proc(): T {.nimcall.}](coroPtr[].entryFnRaw)
-            when T is void:
-                entryFn()
-            else:
-                let res = entryFn()
-                coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
+        let entryFn = cast[SafeContainer[T]](coroPtr[].entryFn).toVal()
+        when hasReturnVal(entryFn):
+            let res = entryFn()
+            coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
         else:
-            let entryFn = cast[proc(env: pointer): T {.nimcall.}](coroPtr[].entryFnRaw)
-            when T is void:
-                entryFn(coroPtr[].entryFnEnv)
-            else:
-                let res = entryFn(coroPtr[].entryFnEnv)
-                coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
+            entryFn()
+
     except CatchableError:
         let exception = getCurrentException()
         Gc_ref exception
@@ -170,17 +165,10 @@ proc `=destroy`*(coroObj: CoroutineObj) =
 
 proc newCoroutineImpl[T](entryFn: EntryFn[T], stacksize: int): Coroutine =
     ## Using Coroutine() constructor result in a "nil" coroutine `isNil() == true`
-    when entryFn is proc(): T {.closure.}:
-        result = newSharedPtr(CoroutineObj(
-            entryFnRaw: rawProc(entryFn),
-            entryFnEnv: rawEnv(entryFn),
-        ))
-    else:
-        result = newSharedPtr(CoroutineObj(
-            entryFnRaw: cast[pointer](entryFn),
-            entryFnEnv: nil,
-        ))
-    var mcoCoroDescriptor = initMcoDescriptor(coroutineMain[T], stacksize.uint)
+    result = newSharedPtr(CoroutineObj(
+        entryFn: cast[SafeContainer[void]](entryFn.toContainer()),
+    ))
+    var mcoCoroDescriptor = initMcoDescriptor(coroutineMain[typeof EntryFn[T]], stacksize.uint)
     mcoCoroDescriptor.user_data = result.getUnsafePtr()
     checkMcoReturnCode createMcoCoroutine(addr(result[].mcoCoroutine), addr mcoCoroDescriptor)
 

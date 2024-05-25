@@ -1,11 +1,12 @@
 import std/macros
 
 import ../[coroutines, eventdispatcher]
-import ./gochannels
+import ./gosemaphores
 
 type
     GoTask*[T] = ref object
-        chan: GoChan[T]
+        coro: Coroutine
+        sem: GoSemaphore
 
 #[
 proc goAsyncImpl(fn: proc()): GoTask[void] {.discardable.} =
@@ -17,18 +18,20 @@ proc goAsyncImpl(fn: proc()): GoTask[void] {.discardable.} =
     return GoTask[void](coro: coro)
 ]#
 
-proc goAsyncImpl[T](fn: proc(): T): GoTask[T] {.discardable.} =
+proc goAsyncImpl[T](sem: GoSemaphore, fn: proc(): T): GoTask[T] {.discardable.} =
     var coro = Coroutine.new(fn)
-    var chan = newGoChannel[T]()
     if runningInAnotherThread():
         getCurrentThreadDispatcher().registerExternCoro coro
     else:
         registerCoro coro
-    return GoTask[T](coro: coro)
+    return GoTask[T](coro: coro, sem: sem)
 
-macro goAsync*(fn: untyped): untyped =
+template goAsync*[T](fn: proc(): T): GoTask[T] =
     # Hard to do it without macro
     # But this one is fast to compile (and called less often than async/await)
-    return quote do:
-        goAsyncImpl proc(): auto =
+    let semaphore = newGoSemaphore()
+    return goAsyncImpl(semaphore,
+        proc(): auto =
             `fn`
+            semaphore.signal()
+    )

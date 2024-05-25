@@ -18,7 +18,7 @@ type
     ThreadQueue*[T] = SharedPtr[ThreadQueueObj[T]]
 
 proc newThreadQueue*[T](): ThreadQueue[T] =
-    let node = allocSharedAndSet(Node[T](isAllocated: true))
+    let node = allocSharedAndSet(Node[T]())
     let atomicNode = newAtomic(node)
     return newSharedPtr(ThreadQueueObj[T](
         head: atomicNode,
@@ -38,7 +38,6 @@ proc addLast*[T](q: ThreadQueue[T], val: sink T) =
     let newNode = allocSharedAndSet(Node[T](
         val: toContainer(val),
         next: newAtomic[ptr Node[T]](nil),
-        isAllocated: true
     ))
     let prevTail = q[].tail.exchange(newNode)
     prevTail[].next.store(newNode)
