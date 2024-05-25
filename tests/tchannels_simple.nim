@@ -6,7 +6,7 @@ discard """
   disabled: "freebsd"
 """
 
-import nimgo/gochannels
+import nimgo/public/gochannels
 import std/os
 
 var chan = newGoChannel[string]()

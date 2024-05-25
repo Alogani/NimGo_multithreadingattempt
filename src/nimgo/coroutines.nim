@@ -188,7 +188,15 @@ proc getCurrentCoroutine*(): Coroutine =
 proc getException*(coro: Coroutine): ref Exception =
     ## nil if state is different than CsDead
     result = cast[ref Exception](coro[].exception)
-    Gc_unref(result)
+    if result != nil:
+        Gc_unref(result)
+
+proc raiseException*(coro: Coroutine) =
+    if coro[].mcoCoroutine.getState() != McoCsFinished:
+        raise newException(ValueError, "Can't reraise unfinished coroutines")
+    let exception = coro.getException()
+    if exception != nil:
+        raise exception
 
 proc getState*(coro: Coroutine): CoroState =
     case coro[].mcoCoroutine.getState():

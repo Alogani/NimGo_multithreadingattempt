@@ -17,9 +17,10 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
 - [X] Implements the Event loop API in the same thread
 - [X] Implements the possibility to run the Event loop in a second thread
 - [X] Implements the basic I/O operations for files
-- [ ] Implements the all I/O operations for files
-- [ ] Implements "GoSemaphore": a blocking primitive working on both coroutines and threads
-- [ ] Implements "GoChannel": a blocking queue on both coroutines and threads
+- [ ] Implements all the I/O operations for files
+- [X] Implements "GoSemaphore": a blocking primitive working on both coroutines and threads
+- [X] Implements "GoChannel": a blocking queue working on both coroutines and threads
+- [ ] Allow to smoothly pass data into coroutines (like closures) thread safely
 - [X] Implement the *goAsync* template to add a coroutine inside the event loop
 - [X] Introduce a *Task[T]* type as the return type of *goAsync*
 - [ ] Introduce some utilities for *Task[T]* :
@@ -30,7 +31,7 @@ Only one word to remember : **goAsync** (and optionaly **wait**, but seriously w
  - etc. ?
 - [X] Implements the I/O operations for timers/process/events/signals
 - [ ] Implements the basic I/O operations for sockets
-- [ ] Implements the all I/O operations for sockets
+- [ ] Implements all the I/O operations for sockets
 - [ ] See if an interoperability layer can be implemented between NimGo's *Task[T]* and std/asyncdispatch's *Future[T]*
 
 ## Comparisons with alternatives I/O handling paradigm

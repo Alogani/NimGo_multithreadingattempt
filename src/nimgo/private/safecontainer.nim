@@ -13,6 +13,7 @@ proc toContainer*[T](val: sink T): SafeContainer[T] =
         Gc_ref(val)
     elif T is string or T is seq:
         let val = GcRefContainer[T](val: val)
+        Gc_ref(val)
     return SafeContainer[T](val: val)
 
 proc toVal*[T](container: sink SafeContainer[T]): T =
@@ -25,3 +26,18 @@ proc toVal*[T](container: sink SafeContainer[T]): T =
         result = move(gcContainer.val)
     else:
         result = move(container.val)
+
+proc isNil*[T](container: SafeContainer[T]): bool =
+    when T is ref or T is string or T is seq:
+        container.val == nil
+    else:
+        false
+
+proc destroy*[T](container: SafeContainer[T]) =
+    ## Not needed if toVal has been called
+    when T is ref or T is string or T is seq:
+        if container.val != nil:
+            GC_unref(container.val)
+    else:
+        discard
+    

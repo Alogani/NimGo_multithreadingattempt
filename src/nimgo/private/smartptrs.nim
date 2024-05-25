@@ -57,7 +57,6 @@ type
 proc decr[T](p: SharedPtr[T]) {.inline.} =
     {.cast(raises: []).}:
         if p.val != nil:
-            echo "DESTRUCTION", T
             # this `fetchSub` returns current val then subs
             # so count == 0 means we're the last
             if p.val.counter.fetchSub(1, moAcquireRelease) == 0:
@@ -88,7 +87,6 @@ proc `=copy`*[T](dest: var SharedPtr[T], src: SharedPtr[T]) =
 
 proc newSharedPtr*[T](val: sink T): SharedPtr[T] {.nodestroy.} =
     ## Returns a zero initialized shared pointer
-    echo "CREATION", T
     result.val = allocSharedAndSet[(T, Atomic[int])](
         (val, newAtomic(0))
     )
