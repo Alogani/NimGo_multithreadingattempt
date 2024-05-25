@@ -2,59 +2,60 @@
 ## Blocking behaviour inside a couroutine suspend, otherwise main thread is blocked
 
 import ./[gosemaphores]
-import ./private/[smartptrs, threadprimitives, threadqueue]
+import ../private/[smartptrs, threadprimitives, threadqueueobj]
 
 export options
 
 type
     GoChanObj[T] = object
-        queue*: ThreadQueue[T]
+        queue*: ThreadQueueObj[T]
         semaphore: GoSemaphore
-        closed: bool
+        closed: ptr bool
 
-    GoChan*[T] = SharedPtr[GoChanObj[T]]
+    GoChan*[T] = GoChanObj[T] #SharedPtr[GoChanObj[T]]
         ## Channel object that can be exchanged both between threads and coroutines
         ## Coroutines can only be suspended if they belong to a dispatcher/event loop. Otherwise the whole thread will block
 
+
 proc newGoChannel*[T](maxItems = 0): GoChan[T] =
-    return newSharedPtr(GoChanObj[T](
+    return GoChan[T](
         queue: newThreadQueue[T](),
         semaphore: newGoSemaphore(),
-        closed: false
-    ))
+        closed: allocSharedAndSet(false)
+    )
 
-proc close*[T](chan: GoChan[T]) =
-    chan[].closed = true
-    chan[].semaphore.signalUpTo(1)
+proc close*[T](chan: var GoChan[T]) =
+    chan.closed[] = true
+    chan.semaphore.signalUpTo(1)
 
-proc closed*[T](chan: GoChan[T]) =
-    chan[].closed
+proc closed*[T](chan: var GoChan[T]) =
+    chan.closed[]
 
-proc send*[T](chan: GoChan[T], data: sink T): bool =
+proc send*[T](chan: var GoChan[T], data: sink T): bool =
     ## Return false if channel closed
-    if chan[].closed:
+    if chan.closed[]:
         return false
-    chan[].queue.addLast data
-    chan[].semaphore.signal()
+    chan.queue.addLast data
+    chan.semaphore.signal()
 
-proc tryRecv*[T](chan: GoChan[T]): Option[T] =
+proc tryRecv*[T](chan: var GoChan[T]): Option[T] =
     ## Non blocking
     ## Return false if channel is closed or data is not available
-    if not chan[].semaphore.tryWait():
+    if not chan.semaphore.tryWait():
         return none(T)
-    return chan[].queue.popFirst()
+    return chan.queue.popFirst()
 
-proc recv*[T](chan: GoChan[T]): Option[T] =
+proc recv*[T](chan: var GoChan[T]): Option[T] =
     ## Blocking
     ## Return false if channel is closed
-    if chan[].closed:
-        if not chan[].semaphore.tryWait():
+    if chan.closed[]:
+        if not chan.semaphore.tryWait():
             return none(T)
     else:
-        chan[].semaphore.wait()
-    return chan[].queue.popFirst()
+        chan.semaphore.wait()
+    return chan.queue.popFirst()
 
-iterator items*[T](chan: GoChan[T]): T {.inline.} =
+iterator items*[T](chan: var GoChan[T]): T {.inline.} =
     while true:
         let data = chan.recv()
         if data.isNone():

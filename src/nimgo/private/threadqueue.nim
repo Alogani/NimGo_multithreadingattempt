@@ -1,5 +1,5 @@
 import std/[options]
-import ./[smartptrs, threadprimitives]
+import ./[safecontainer, smartptrs, threadprimitives]
 
 export options
 
@@ -7,17 +7,9 @@ export options
 ## Constant complexity with minimal overhead even if push/pop are not balanced
 
 type
-    GcRefContainer[T] = ref object
-        val: T
-
     Node[T] = object
-        when T is seq or T is string:
-            # Simplest and safest
-            val: GcRefContainer[T]
-            next: Atomic[ptr Node[T]]
-        else:
-            val: T
-            next: Atomic[ptr Node[T]]
+        val: SafeContainer[T]
+        next: Atomic[ptr Node[T]]
 
     ThreadQueueObj[T] = object
         head: Atomic[ptr Node[T]]
@@ -38,23 +30,13 @@ proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
     var currentNode = q.head.load(moRelaxed)
     while currentNode != nil:
         let nextNode = currentNode.next.load(moRelaxed)
-        when T is ref or T is string or T is seq:
-            # when T is string or T is seq, we dealloc GcRefContainer[T]
-            if currentNode[].val != nil:
-                deallocShared(cast[pointer](currentNode[].val))
+        discard currentNode.val.toVal()
         deallocShared(currentNode)
         currentNode = nextNode
 
 proc addLast*[T](q: ThreadQueue[T], val: sink T) =
-    when defined(gcOrc):
-        GC_runOrc()
-    when T is ref:
-        Gc_ref(val)
-    when T is string or T is seq:
-        let val = GcRefContainer[T](val: val)
-        Gc_ref(val)
     let newNode = allocSharedAndSet(Node[T](
-        val: val,
+        val: toContainer(val),
         next: newAtomic[ptr Node[T]](nil)
     ))
     let prevTail = q[].tail.exchange(newNode)
@@ -66,14 +48,7 @@ proc popFirst*[T](q: ThreadQueue[T]): Option[T] =
     if newHead == nil:
         return none(T)
     if q[].head.compareExchange(oldHead, newHead):
-        when T is string or T is seq:
-            var val = newHead[].val.val
-            Gc_unref(newHead[].val)
-        else:
-            var val = newHead[].val
-            when T is ref:
-                Gc_unref(val)
-        result = some(move(val))
+        result = some(newHead[].val.toVal())
         deallocShared(oldHead)
         return
 

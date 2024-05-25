@@ -4,24 +4,24 @@ import ../coroutines
 import ../eventdispatcher
 
 type
-    Task*[T] = ref object
+    GoTask*[T] = ref object
         coro: Coroutine
 
-proc goAsyncImpl(fn: proc()): Task[void] {.discardable.} =
+proc goAsyncImpl(fn: proc()): GoTask[void] {.discardable.} =
     var coro = Coroutine.new(fn)
     if runningInAnotherThread():
-        registerExternCoro coro
+        getCurrentThreadDispatcher().registerExternCoro coro
     else:
         registerCoro coro
-    return Task[void](coro: coro)
+    return GoTask[void](coro: coro)
 
-proc goAsyncImpl[T](fn: proc(): T): Task[T] {.discardable.} =
+proc goAsyncImpl[T](fn: proc(): T): GoTask[T] {.discardable.} =
     var coro = Coroutine.new(fn)
     if runningInAnotherThread():
-        registerExternCoro coro
+        getCurrentThreadDispatcher().registerExternCoro coro
     else:
         registerCoro coro
-    return Task[T](coro: coro)
+    return GoTask[T](coro: coro)
 
 macro goAsync*(fn: untyped): untyped =
     # Hard to do it without macro

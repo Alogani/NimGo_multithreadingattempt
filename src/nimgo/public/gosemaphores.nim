@@ -1,5 +1,5 @@
-import ./private/[threadprimitives, threadqueue, smartptrs]
-import ./[coroutines, eventdispatcher]
+import ../private/[threadprimitives, threadqueue, smartptrs]
+import ../[coroutines, eventdispatcher]
 
 type
     GoSemaphoreObj = object
