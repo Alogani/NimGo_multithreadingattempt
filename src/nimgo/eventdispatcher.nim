@@ -276,7 +276,6 @@ when not defined(NimGoNoThread):
         ## An exit proc will be added to prevent the main thread to stop before the event lopo is empty
         var EventLoopThread: Thread[(int, EvDispatcher, BoolFlagRef)]
         createThread(EventLoopThread, runEventLoopThreadImpl, (-1, dispatcher, stopWhenEmpty))
-        #activeDispatchersInThreads.add dispatcher
         addExitProc(proc() =
             if getProgramResult() == 0 and dispatcher[].running:
                 stopWhenEmpty.value = true

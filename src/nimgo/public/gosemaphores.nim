@@ -73,7 +73,7 @@ proc tryAcquire*(self: GoSemaphore): bool =
     ## Won't be put to sleep. return true is semaphore have been acquired, else false
     var actualCount = self[].counter.load()
     while true:
-        if actualCount <= 0:
+        if actualCount < 0:
             return false
         if self[].counter.compareExchange(actualCount, actualCount - 1):
             return true
@@ -83,8 +83,8 @@ proc waitWithTimeout*(self: GoSemaphore, timeoutMs: int): bool =
     ## If waiter is a thread, we have no choice than to busywait
     let timeout = TimeOutWatcher.init(timeoutMs)
     if runningInsideDispatcher():
-        if fetchSub(self[].counter, 1) > 0:
-            return
+        if fetchSub(self[].counter, 1, moRelaxed) > 0:
+            return true
         let currentCoro = getCurrentCoroutine()
         let currentSharedCoro = newSharedResource(currentCoro)
         self[].waitersQueue.addLast (currentSharedCoro, getCurrentThreadDispatcher())
@@ -96,9 +96,12 @@ proc waitWithTimeout*(self: GoSemaphore, timeoutMs: int): bool =
         else:
             return true
     else:
+        if fetchSub(self[].counter, 1) > 0:
+            return
+        self[].waitersQueue.addLast (SharedCoroutine(), EvDispatcher())
         while not timeout.expired:
             if self.tryAcquire():
                 return true
-            sleep(BusyWaitSleepMs)
+            sleep(clampTimeout(timeout.getRemainingMs(), BusyWaitSleepMs))
         return false
     

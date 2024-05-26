@@ -64,9 +64,8 @@ _The advantages and drawbacks are similar than comparing async/await with thread
     - Less verbosity
     - Integration with sync code with almost no refactoring
     - I/O operations handling become implementation details, not polluting the end user
-    - Compilation speed: almost no macro is necessary in coroutines implementation
+    - Compilation speed: almost no macro is necessary in coroutines implementation (however mitigitated by incremental compilation)
   - Should be slightly faster _to confirm_
-  - Async/await uses many templates, which slow down the compilation (however mitigitated by incremental compilation)
 - **Drawbacks**:
     - More memory is consumed for each new Coroutine:
         - this can made it less suitable for very high demanding servers (basic benchmarks in nimgo/benchmarks show that async/await memory don't grow, whereas nimgo grows at a constant pace. However asyncdispatch crashed on higher loads)
