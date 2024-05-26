@@ -1,9 +1,13 @@
+# Some hideous code to trick GC to make traced reference safe in ARC (and by extension ORC)
+# Fortunalty Araq will probably never see this and won't have a heart attack
+
 type
     GcRefContainer[T] = ref object
         val: T
 
 template mustGoInsideRef(T: typedesc): bool =
     # Non closures proc don't need to be stored inside ref, but simpler this way
+    # String and seq needs to be contained, because Gc_ref doesn't exists for them anymore in ARC
     T is void or T is seq or T is string or T is proc
 
 type
@@ -22,7 +26,7 @@ proc toContainer*[T](val: sink T): SafeContainer[T] =
     return SafeContainer[T](val: val)
 
 proc peek*[T](container: SafeContainer[T]): T =
-    ## Doesnot free memory
+    ## Does not free memory
     when T is ref:
         result = container.val
     elif mustGoInsideRef(T):
@@ -49,7 +53,7 @@ proc isNil*[T](container: SafeContainer[T]): bool =
         false
 
 proc destroy*[T](container: SafeContainer[T]) =
-    ## Not needed if toVal has been called
+    ## Not needed if toVal has been called. Won't double free if val is nil
     when mustGoInsideRef(T):
         if container.val != nil:
             GC_unref(container.val)

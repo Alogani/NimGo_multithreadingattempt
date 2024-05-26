@@ -106,7 +106,7 @@ export isNil
 
 type
     CoroState* = enum
-        CsRunning ## Is the current main coroutine
+        CsRunning
         CsParenting ## The coroutine is active but not running (that is, it has resumed another coroutine).
         CsSuspended
         CsFinished
@@ -133,8 +133,8 @@ proc coroutineMain[T](mcoCoroutine: ptr McoCoroutine) {.cdecl.} =
     ## Start point of the coroutine.
     let coroPtr = cast[ptr CoroutineObj](mcoCoroutine.getUserData())
     try:
+        # Peek only, otherwise GC will happily free our captured variables right now if we are in another thread
         let entryFn = cast[SafeContainer[T]](coroPtr[].entryFn).peek()
-        # Peek only to avoid Gc to trigger to early
         when hasReturnVal(entryFn):
             let res = entryFn()
             coroPtr[].returnedVal = allocSharedAndSet(res.toContainer())
@@ -164,6 +164,7 @@ proc `=destroy`*(coroObj: CoroutineObj) =
         dealloc(coroObj.exception)
     if coroObj.returnedVal != nil:
         deallocShared(coroObj.returnedVal)
+    coroObj.entryFn.destroy()
 
 proc newCoroutineImpl[T](entryFn: EntryFn[T], stacksize: int): Coroutine =
     ## Using Coroutine() constructor result in a "nil" coroutine `isNil() == true`
@@ -180,10 +181,10 @@ proc newCoroutine*[T](entryFn: EntryFn[T], stacksize = DefaultStackSize): Corout
 proc newCoroutine*(entryFn: EntryFn[void], stacksize = DefaultStackSize): Coroutine =
     newCoroutineImpl[void](entryFn, stacksize)
 
-proc resume*(coro: Coroutine) =
-    ## Will resume the coroutine where it stopped (or start it).
-    ## Will do nothing if coroutine is finished
-    if getState(coro[].mcoCoroutine) == McoCsFinished:
+proc resume*(coro: Coroutine, noraise = false) =
+    ## Will resume the coroutine where it stopped (or start it)
+    ## If noraise == true, won't try to resume finished or suspended coroutines
+    if noraise and getState(coro[].mcoCoroutine) in {McoCsFinished, McoCsSuspended}:
         return
     let frame = getFrameState()
     checkMcoReturnCode resume(coro[].mcoCoroutine)
@@ -211,7 +212,8 @@ proc getReturnVal*[T](coro: Coroutine): T =
     if coro[].returnedVal == nil:
         raise newException(ValueError, "Coroutine don't have a return value or is not finished")
     result = cast[ptr SafeContainer[T]](coro[].returnedVal)[].toVal()
-    deallocSharedAndSetNil(coro[].returnedVal)
+    deallocShared(coro[].returnedVal)
+    coro[].returnedVal = nil
 
 proc getException*(coro: Coroutine): ref Exception =
     ## nil if state is different than CsDead

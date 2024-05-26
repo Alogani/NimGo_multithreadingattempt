@@ -17,13 +17,6 @@ type
 
     ThreadQueue*[T] = SharedPtr[ThreadQueueObj[T]]
 
-proc newThreadQueue*[T](): ThreadQueue[T] =
-    let node = allocSharedAndSet(Node[T]())
-    let atomicNode = newAtomic(node)
-    return newSharedPtr(ThreadQueueObj[T](
-        head: atomicNode,
-        tail: atomicNode
-    ))
 
 proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
     let qAddr = addr q
@@ -33,6 +26,14 @@ proc `=destroy`*[T](q: ThreadQueueObj[T]) {.nodestroy.} =
         destroy(currentNode.val)
         deallocShared(currentNode)
         currentNode = nextNode
+
+proc newThreadQueue*[T](): ThreadQueue[T] =
+    let node = allocSharedAndSet(Node[T]())
+    let atomicNode = newAtomic(node)
+    return newSharedPtr(ThreadQueueObj[T](
+        head: atomicNode,
+        tail: atomicNode
+    ))
 
 proc addLast*[T](q: ThreadQueue[T], val: sink T) =
     let newNode = allocSharedAndSet(Node[T](

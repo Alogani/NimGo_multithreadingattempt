@@ -1,5 +1,5 @@
-import ./coroutines {.all.}
-import ./private/[threadqueue, threadprimitives, smartptrs]
+import ./coroutines
+import ./private/[timeoutwatcher, threadqueue, threadprimitives, smartptrs]
 import std/exitprocs
 import std/[deques, heapqueue]
 import std/[os, selectors, nativesockets]
@@ -28,53 +28,10 @@ else:
           This will allow the loop to be rerun to take into account workers and new events.
         - If the event loop and poll queue is empty, runOnce will immediatly return
     If you notice other differences with libuv, please let me now (I will either document it or implement it)
+
+    Design has not been oriented for strong cancellation support, as it would add some overhead and is expected to be a corner case.
+    However, workarounds should be easy by dissociating the waiting of a resource availability from its usage, or by using goasync/wait
 ]#
-
-## Following to resolve:
-## - For now, `onNextTickCoros`, `timers`, `pendingCoros`, `checkCoros` and `closeCoros` are not used
-## 
-
-
-#[ *** Timeout utility *** ]#
-
-type
-    TimeOutWatcher* = object
-        beginTime: Time
-        timeoutMs: int
-
-proc init*(T: type TimeOutWatcher, timeoutMs: int): T =
-    TimeOutWatcher(
-        beginTime: if timeoutMs != -1: getTime() else: Time(),
-        timeoutMs: timeoutMs
-    )
-
-proc hasNoDeadline*(self: TimeOutWatcher): bool =
-    return self.timeoutMs == -1
-
-proc expired*(self: TimeOutWatcher): bool =
-    if self.timeoutMs == -1:
-        return false
-    if self.timeoutMs < (getTime() - self.beginTime).inMilliseconds():
-        return true
-    return false
-
-proc getRemainingMs*(self: TimeOutWatcher): int =
-    if self.timeoutMs == -1:
-        return -1
-    let remaining = self.timeoutMs - (getTime() - self.beginTime).inMilliseconds()
-    if remaining < 0:
-        return 0
-    else:
-        return remaining
-
-proc clampTimeout(x, b: int): int =
-    ## if b == -1, consider it infinity
-    ## Minimum timeout is always 0
-    if x < 0: return 0
-    if b != -1 and x > b: return b
-    return x
-
-#[ *** Event dispatcher/loop *** ]#
 
 type
     AsyncData = object
@@ -88,8 +45,10 @@ type
     BoolFlagRef* = ref object
         ## Must be stored globally to avoid GC if used between threads
         value*: bool
-
+    
     CoroutineWithTimer = tuple[finishAt: MonoTime, coro: Coroutine]
+    SharedCoroutine* = SharedResource[Coroutine] ## Helper to provide some cancellation support/avoid data race on resume
+    SharedCoroutineWithTimer = tuple[finishAt: MonoTime, sharedCoro: SharedCoroutine]
 
     EvDispatcherObj = object
         running: bool
@@ -101,6 +60,7 @@ type
         externCoros: ThreadQueue[Coroutine] # Coroutines added from another thread
         onNextTickCoros: Deque[Coroutine]
         timers: HeapQueue[CoroutineWithTimer] # Thresold and not exact time
+        timersShared: HeapQueue[SharedCoroutineWithTimer] # Thresold and not exact time
         pendingCoros: Deque[Coroutine]
         checkCoros: Deque[Coroutine]
         closeCoros: Deque[Coroutine]
@@ -112,9 +72,9 @@ type
         ## All coroutines registered in the dispatcher will be run in the dispatcher thread.
         ## It's unsafe to interact with the dispatcher in another thread, at the exception of `registerExternCoros` proc
     
-const EvDispatcherTimeoutMs {.intdefine.} = 100 # We don't block on poll phase if new coros were registered
-const SleepMsIfInactive = 30 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
-const SleepMsIfEmpty = 50 # to avoid busy waiting. When the event loop is empty
+const EvDispatcherTimeoutMs {.intdefine.} = 50 # We don't block on poll phase if new coros were registered
+const SleepMsIfInactive = 20 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
+const SleepMsIfEmpty = 40 # to avoid busy waiting. When the event loop is empty
 const CoroLimitByPhase = 30 # To avoid starving the coros inside the poll
 
 var DispatcherRunningInCurrentThread {.threadvar.}: bool
@@ -136,6 +96,9 @@ proc newDispatcher*(): EvDispatcher =
     result[].selector = newSelector[AsyncData]()
 
 proc `<`(a, b: CoroutineWithTimer): bool =
+    a.finishAt < b.finishAt
+
+proc `<`(a, b: SharedCoroutineWithTimer): bool =
     a.finishAt < b.finishAt
 
 proc isDispatcherEmpty*(dispatcher: EvDispatcher = ActiveDispatcher): bool =
@@ -164,13 +127,27 @@ proc processTimers(coroLimitForTimer: var int, timeout: TimeOutWatcher) =
     while coroLimitForTimer < CoroLimitByPhase or ActiveDispatcher[].corosCountInPoll == 0:
         if timeout.expired():
             break
-        if ActiveDispatcher[].timers.len() == 0:
+        if ActiveDispatcher[].timers.len() == 0 and ActiveDispatcher[].timersShared.len() == 0:
+            ## Blazingly faster than getMonoTime
             break
-        if getMonotime() < ActiveDispatcher[].timers[0].finishAt:
+        var monoTimeNow = getMonoTime()
+        var hasResumed = false
+        if ActiveDispatcher[].timers.len() != 0:
+            if monoTimeNow > ActiveDispatcher[].timers[0].finishAt:
+                hasResumed = true
+                ActiveDispatcher[].timers.pop().coro.resume()
+                processNextTickCoros(timeout)
+                coroLimitForTimer += 1
+                monoTimeNow = getMonoTime()
+        if ActiveDispatcher[].timersShared.len() != 0:
+            if monoTimeNow > ActiveDispatcher[].timersShared[0].finishAt:
+                hasResumed = true
+                let coroOption = ActiveDispatcher[].timersShared.pop().sharedCoro.use()
+                if coroOption.isSome(): resume(coroOption.unsafeGet())
+                processNextTickCoros(timeout)
+                coroLimitForTimer += 1
+        if not hasResumed:
             break
-        ActiveDispatcher[].timers.pop().coro.resume()
-        processNextTickCoros(timeout)
-        coroLimitForTimer += 1
 
 proc runOnce(timeoutMs: int) =
     ## Run the event loop. The poll phase is done only once
@@ -331,12 +308,21 @@ proc registerCoro*(coro: Coroutine) =
     ## Will register in the "pending phase"
     ActiveDispatcher[].pendingCoros.addLast coro
 
-proc registerOnTimer*(coro: Coroutine, timeoutMs: int) =
+proc registerOnSchedule*(coro: Coroutine, timeoutMs: int) =
     ## Not thread safe
     ## Equivalent to a sleep directly handled by the dispatcher
-    ActiveDispatcher[].timers.push (
-        getMonoTime() + initDuration(milliseconds = timeoutMs),
+    ActiveDispatcher[].timers.push(
+        (getMonoTime() + initDuration(milliseconds = timeoutMs),
         coro)
+    )
+
+proc registerOnSchedule*(sharedCoro: SharedCoroutine, timeoutMs: int) =
+    ## Not thread safe
+    ## Equivalent to a sleep directly handled by the dispatcher
+    ActiveDispatcher[].timersShared.push(
+        (getMonoTime() + initDuration(milliseconds = timeoutMs),
+        sharedCoro)
+    )
 
 proc registerOnNextTick*(coro: Coroutine) =
     ## Not thread safe

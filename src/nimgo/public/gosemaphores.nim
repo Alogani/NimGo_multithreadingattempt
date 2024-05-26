@@ -1,5 +1,6 @@
-import ../private/[threadprimitives, threadqueue, smartptrs]
+import ../private/[timeoutwatcher, threadprimitives, threadqueue, smartptrs]
 import ../[coroutines, eventdispatcher]
+import std/os
 
 type
     GoSemaphoreObj = object
@@ -7,11 +8,18 @@ type
         ## It is thread safe but rely on coroutine's dispatcher, because coroutine cannot be resumed in another thread
         ## It uses a combination of Lock and Atomic for efficiency
         counter: Atomic[int]
-        waitersQueue: ThreadQueue[tuple[coro: Coroutine, dispatcher: EvDispatcher]] # nil if thread waiting
+        waitersQueue: ThreadQueue[tuple[coroShared: SharedResource[Coroutine], dispatcher: EvDispatcher]] # nil if thread waiting
         lock: Lock
         cond: Cond
 
     GoSemaphore* = SharedPtr[GoSemaphoreObj]
+
+const BusyWaitSleepMs* = 10
+
+proc `=destroy`*(sem: GoSemaphoreObj) =
+    let semAddr = addr(sem)
+    deinitLock(semAddr[].lock)
+    deinitCond(semAddr[].cond)
 
 proc newGoSemaphore*(initialValue = 0): GoSemaphore =
     var lock = Lock()
@@ -20,32 +28,10 @@ proc newGoSemaphore*(initialValue = 0): GoSemaphore =
     cond.initCond()
     return newSharedPtr(GoSemaphoreObj(
         counter: newAtomic(initialValue),
-        waitersQueue: newThreadQueue[tuple[coro: Coroutine, dispatcher: EvDispatcher]](),
+        waitersQueue: newThreadQueue[tuple[coroShared: SharedCoroutine, dispatcher: EvDispatcher]](),
         lock: lock,
         cond: cond,
     ))
-
-proc wait*(self: GoSemaphore) =
-    if fetchSub(self[].counter, 1) > 0:
-        return
-    if runningInsideDispatcher():
-        let currentCoro = getCurrentCoroutine()
-        self[].waitersQueue.addLast (currentCoro, getCurrentThreadDispatcher())
-        suspend(currentCoro)
-    else:
-        self[].lock.acquire()
-        self[].waitersQueue.addLast (Coroutine(), EvDispatcher())
-        wait(self[].cond, self[].lock)
-        self[].lock.release()
-
-proc tryWait*(self: GoSemaphore): bool =
-    ## Won't be put to sleep. return true is semaphore have been acquired, else false
-    var actualCount = self[].counter.load()
-    while true:
-        if actualCount <= 0:
-            return false
-        if self[].counter.compareExchange(actualCount, actualCount - 1):
-            return true
 
 proc signal*(self: GoSemaphore) =
     if fetchAdd(self[].counter, 1) >= 0:
@@ -56,11 +42,63 @@ proc signal*(self: GoSemaphore) =
     let currentWaiter = currentWaiterOpt.unsafeGet()
     if currentWaiter.dispatcher.isNil():
         signal(self[].cond)
-    elif currentWaiter.dispatcher.runningInAnotherThread():
-        currentWaiter.dispatcher.registerExternCoro currentWaiter.coro
+        return
+    let coroOpt = currentWaiter.coroShared.use()
+    if coroOpt.isNone():
+        return # Doesn't need fetchAdd, because wait will call signal if timeout.expired()
+    let coro = coroOpt.unsafeGet()
+    if currentWaiter.dispatcher.runningInAnotherThread():
+        currentWaiter.dispatcher.registerExternCoro coro
     else:
-        registerCoro currentWaiter.coro
+        registerCoro coro
 
 proc signalUpTo*(self: GoSemaphore, count = 0) =
     while self[].counter.load() < count:
         self.signal()
+
+proc wait*(self: GoSemaphore) =
+    if fetchSub(self[].counter, 1) > 0:
+        return
+    if runningInsideDispatcher():
+        let currentCoro = getCurrentCoroutine()
+        self[].waitersQueue.addLast (newSharedResource(currentCoro), getCurrentThreadDispatcher())
+        suspend(currentCoro)
+    else:
+        self[].lock.acquire()
+        self[].waitersQueue.addLast (SharedCoroutine(), EvDispatcher())
+        wait(self[].cond, self[].lock)
+        self[].lock.release()
+
+proc tryAcquire*(self: GoSemaphore): bool =
+    ## Won't be put to sleep. return true is semaphore have been acquired, else false
+    var actualCount = self[].counter.load()
+    while true:
+        if actualCount <= 0:
+            return false
+        if self[].counter.compareExchange(actualCount, actualCount - 1):
+            return true
+
+proc waitWithTimeout*(self: GoSemaphore, timeoutMs: int): bool =
+    ## Return true if semaphore has been acquired else false
+    ## If waiter is a thread, we have no choice than to busywait
+    let timeout = TimeOutWatcher.init(timeoutMs)
+    if runningInsideDispatcher():
+        if fetchSub(self[].counter, 1) > 0:
+            return
+        let currentCoro = getCurrentCoroutine()
+        let currentSharedCoro = newSharedResource(currentCoro)
+        self[].waitersQueue.addLast (currentSharedCoro, getCurrentThreadDispatcher())
+        registerOnSchedule(currentSharedCoro, timeoutMs)
+        suspend(currentCoro)
+        if timeout.expired:
+            self.signal()
+            return false
+        else:
+            return true
+    else:
+        while not timeout.expired:
+            if self.tryAcquire():
+                return true
+            sleep(BusyWaitSleepMs)
+        return false
+    

@@ -37,22 +37,21 @@ proc send*[T](chan: GoChan[T], data: sink T): bool =
     chan[].queue.addLast data
     chan[].semaphore.signal()
 
-proc tryRecv*[T](chan: GoChan[T]): Option[T] =
-    ## Non blocking
-    ## Return false if channel is closed or data is not available
-    if not chan[].semaphore.tryWait():
-        return none(T)
-    return chan[].queue.popFirst()
-
-proc recv*[T](chan: GoChan[T]): Option[T] =
-    ## Blocking
+proc recv*[T](chan: GoChan[T], timeoutMs = -1): Option[T] =
+    ## Blocking, except if timeout == 0
     ## Return false if channel is closed
-    if chan[].closed:
-        if not chan[].semaphore.tryWait():
+    ## Return false if data is not avalaible when timeout is set
+    if timeoutMs == 0 or chan[].closed:
+        if not chan[].semaphore.tryAcquire():
             return none(T)
-    else:
+        return chan[].queue.popFirst()
+    elif timeoutMs == -1:
         chan[].semaphore.wait()
-    return chan[].queue.popFirst()
+        return chan[].queue.popFirst()
+    else:
+        if not chan[].semaphore.waitWithTimeout(timeoutMs):
+            return none(T)
+        return chan[].queue.popFirst()
 
 iterator items*[T](chan: GoChan[T]): T {.inline.} =
     while true:
