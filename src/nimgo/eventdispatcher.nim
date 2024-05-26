@@ -106,6 +106,7 @@ proc isDispatcherEmpty*(dispatcher: EvDispatcher = ActiveDispatcher): bool =
         dispatcher[].externCoros.empty() and
         dispatcher[].onNextTickCoros.len() == 0 and
         dispatcher[].timers.len() == 0 and
+        dispatcher[].timersShared.len() == 0 and
         dispatcher[].pendingCoros.len() == 0 and
         dispatcher[].checkCoros.len() == 0 and
         dispatcher[].closeCoros.len() == 0

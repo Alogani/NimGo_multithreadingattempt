@@ -90,7 +90,7 @@ proc waitWithTimeout*(self: GoSemaphore, timeoutMs: int): bool =
         self[].waitersQueue.addLast (currentSharedCoro, getCurrentThreadDispatcher())
         registerOnSchedule(currentSharedCoro, timeoutMs)
         suspend(currentCoro)
-        if timeout.expired:
+        if timeout.expired():
             self.signal()
             return false
         else:

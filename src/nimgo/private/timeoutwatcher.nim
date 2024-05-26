@@ -17,7 +17,7 @@ proc hasNoDeadline*(self: TimeOutWatcher): bool =
 proc expired*(self: TimeOutWatcher): bool =
     if self.timeoutMs == -1:
         return false
-    if self.timeoutMs < (getTime() - self.beginTime).inMilliseconds():
+    if self.timeoutMs <= (getTime() - self.beginTime).inMilliseconds():
         return true
     return false
 
