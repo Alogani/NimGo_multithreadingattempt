@@ -1,16 +1,8 @@
-import goasync/[dispatcher, coroutines]
+import ./nimgo/coroutines
+export coroutines
 
-type
-    Task*[T] = distinct Coroutine[T]
+import ./nimgo/eventdispatcher
+export runEventLoop, withEventLoopThread
 
-template goAsync*[T](fn: proc(): T): Task[T] =
-    ## Code will be scheduled inside the dispatcher
-    registerAsyncFn(fn)
-
-proc finished*[T](task: Task[T]): bool =
-    return task.finished
-
-proc wait*[T](task: Task[T]): T =
-    ## Blocking
-    while not task.finished:
-        poll()
+import ./nimgo/public/[gochannels, gosemaphores]#, gotasks]
+export gochannels, gosemaphores#, gotasks
