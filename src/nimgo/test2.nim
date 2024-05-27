@@ -12,5 +12,5 @@ withEventLoopThread:
 
     var coro = newCoroutine(mainCoro)
     registerExternCoro(getCurrentThreadDispatcher(), coro)
-    sleep(100)
+    sleep(500)
     sem.signal()

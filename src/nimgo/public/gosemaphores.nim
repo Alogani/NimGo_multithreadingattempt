@@ -46,6 +46,7 @@ proc signal*(self: GoSemaphore) =
     let coroOpt = currentWaiter.coroShared.use()
     if coroOpt.isNone():
         return # Doesn't need fetchAdd, because wait will call signal if timeout.expired()
+    currentWaiter.dispatcher.notifySharedCoroRegisteredOnScheduledDestruction()
     let coro = coroOpt.unsafeGet()
     if currentWaiter.dispatcher.runningInAnotherThread():
         currentWaiter.dispatcher.registerExternCoro coro

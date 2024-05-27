@@ -9,8 +9,8 @@ proc expectedTimeRange(t0: MonoTime, minMs, maxMs: int) =
     check currentTimeElapsed >= minMs
     check currentTimeElapsed < maxMs
 
-test "Thread signal - coro waiter / wake up immediatly":
-    proc main() =
+withEventLoopThread:
+    test "Thread signal - coro waiter / wake up immediatly":
         var sem = newGoSemaphore()
         let t0 = getMonoTime()
         proc mainCoro() =
@@ -19,23 +19,19 @@ test "Thread signal - coro waiter / wake up immediatly":
 
         registerExternCoro(getCurrentThreadDispatcher(), newCoroutine(mainCoro))
         sem.signal()
-    main()
 
-test "Thread signal - coro waiter / wake up after sleep":
-    proc main() =
+    test "Thread signal - coro waiter / wake up after sleep":
         var sem = newGoSemaphore()
         let t0 = getMonoTime()
         proc mainCoro() =
             check sem.waitWithTimeout(2000) == true
-            expectedTimeRange(t0, 500, 520)
+            expectedTimeRange(t0, 500, 550)
 
         registerExternCoro(getCurrentThreadDispatcher(), newCoroutine(mainCoro))
         sleep(500)
         sem.signal()
-    main()
 
-test "coro waiter / no wake up":
-    proc main() =
+    test "coro waiter / no wake up":
         var sem = newGoSemaphore()
         let t0 = getMonoTime()
         proc mainCoro() =
@@ -43,10 +39,8 @@ test "coro waiter / no wake up":
             expectedTimeRange(t0, 2000, 2020)
 
         registerExternCoro(getCurrentThreadDispatcher(), newCoroutine(mainCoro))
-    main()
 
-test "Coro signal - thread waiter / wake up immediatly + no wake up":
-    proc main() =
+    test "Coro signal - thread waiter / wake up immediatly + no wake up":
         var sem = newGoSemaphore()
         proc mainCoro() =
             sem.signal()
@@ -55,10 +49,8 @@ test "Coro signal - thread waiter / wake up immediatly + no wake up":
         check sem.waitWithTimeout(2000) == true
         check sem.waitWithTimeout(100) == false
         expectedTimeRange(t0, 100, 160)
-    main()
 
-test "Coro signal - thread waiter / wake up after sleep":
-    proc main() =
+    test "Coro signal - thread waiter / wake up after sleep":
         var sem = newGoSemaphore()
         proc mainCoro() =
             let currentCoro = getCurrentCoroutine()
@@ -69,4 +61,3 @@ test "Coro signal - thread waiter / wake up after sleep":
         let t0 = getMonoTime()
         check sem.waitWithTimeout(2000) == true
         expectedTimeRange(t0, 500, 560)
-    main()

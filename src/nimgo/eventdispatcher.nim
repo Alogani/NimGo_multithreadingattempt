@@ -53,6 +53,7 @@ type
         onNextTickCoros: Deque[Coroutine]
         timers: HeapQueue[CoroutineWithTimer] # Thresold and not exact time
         timersShared: HeapQueue[SharedCoroutineWithTimer] # Thresold and not exact time
+        cancelledSharedCorosCount: Atomic[int]
         pendingCoros: Deque[Coroutine]
         checkCoros: Deque[Coroutine]
         closeCoros: Deque[Coroutine]
@@ -100,7 +101,8 @@ proc isDispatcherEmpty*(dispatcher: EvDispatcher = ActiveDispatcher): bool =
         dispatcher[].externCoros.empty() and
         dispatcher[].onNextTickCoros.len() == 0 and
         dispatcher[].timers.len() == 0 and
-        dispatcher[].timersShared.len() == 0 and
+        (dispatcher[].timersShared.len() -
+            dispatcher[].cancelledSharedCorosCount.load()) == 0 and
         dispatcher[].pendingCoros.len() == 0 and
         dispatcher[].checkCoros.len() == 0 and
         dispatcher[].closeCoros.len() == 0
@@ -122,7 +124,9 @@ proc processTimers(coroLimitForTimer: var int, timeout: TimeOutWatcher) =
     while coroLimitForTimer < CoroLimitByPhase or ActiveDispatcher[].corosCountInPoll == 0:
         if timeout.expired():
             break
-        if ActiveDispatcher[].timers.len() == 0 and ActiveDispatcher[].timersShared.len() == 0:
+        if ActiveDispatcher[].timers.len() == 0 and (
+                ActiveDispatcher[].timersShared.len() -
+                ActiveDispatcher[].cancelledSharedCorosCount.load()) == 0:
             ## Blazingly faster than getMonoTime
             break
         var monoTimeNow = getMonoTime()
@@ -134,13 +138,17 @@ proc processTimers(coroLimitForTimer: var int, timeout: TimeOutWatcher) =
                 processNextTickCoros(timeout)
                 coroLimitForTimer += 1
                 monoTimeNow = getMonoTime()
-        if ActiveDispatcher[].timersShared.len() != 0:
+        while ActiveDispatcher[].timersShared.len() != 0:
             if monoTimeNow > ActiveDispatcher[].timersShared[0].finishAt:
-                hasResumed = true
                 let coroOption = ActiveDispatcher[].timersShared.pop().sharedCoro.use()
-                if coroOption.isSome(): resume(coroOption.unsafeGet())
+                if coroOption.isNone():
+                    ActiveDispatcher[].cancelledSharedCorosCount.atomicDec()
+                    continue
+                hasResumed = true
+                resume(coroOption.unsafeGet())
                 processNextTickCoros(timeout)
                 coroLimitForTimer += 1
+            break 
         if not hasResumed:
             break
 
@@ -321,6 +329,10 @@ proc registerOnSchedule*(sharedCoro: SharedCoroutine, timeoutMs: int) =
         (getMonoTime() + initDuration(milliseconds = timeoutMs),
         sharedCoro)
     )
+
+proc notifySharedCoroRegisteredOnScheduledDestruction*(dispatcher: EvDispatcher) =
+    ## Thread safe. Notify a sharedCoro registered with `registerOnSchedule` that it doesn't longer exists, so to not wait it for nothing
+    dispatcher[].cancelledSharedCorosCount.atomicInc()
 
 proc registerOnNextTick*(coro: Coroutine) =
     ## Not thread safe

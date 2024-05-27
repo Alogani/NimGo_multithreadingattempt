@@ -1,5 +1,4 @@
 import nimgo
-
 from nimgo/eventdispatcher import registerExternCoro, getCurrentThreadDispatcher
 
 import std/unittest
