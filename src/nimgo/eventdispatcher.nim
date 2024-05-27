@@ -1,19 +1,14 @@
 import ./coroutines
 import ./private/[timeoutwatcher, threadqueue, threadprimitives, smartptrs]
-import std/exitprocs
 import std/[deques, heapqueue]
 import std/[os, selectors, nativesockets]
 import std/[times, monotimes]
 
 export Event
 
-const NimGoNoThread* {.booldefine.} = false
-    ## Setting this add some optimizations due to the absence of thread and implies NimGoNoStart
-when defined(NimGoNoThread):
-    const NimGoNoStart* = true
-else:
-    const NimGoNoStart* {.booldefine.} = false
-    ## Setting this flag prevents NimGo event loop from autostarting
+const NimGoNoThreadSupport* {.booldefine.} = false
+    ## Setting this add some optimizations due to the absence of thread
+
 
 #[
     Event loop implementation close to how the nodejs/libuv one's works (for more details: https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick).
@@ -41,16 +36,13 @@ type
 
     PollFd* = distinct int
         ## Reprensents a descriptor registered in the EventDispatcher: file handle, signal, timer, etc.
-
-    BoolFlagRef* = ref object
-        ## Must be stored globally to avoid GC if used between threads
-        value*: bool
     
     CoroutineWithTimer = tuple[finishAt: MonoTime, coro: Coroutine]
     SharedCoroutine* = SharedResource[Coroutine] ## Helper to provide some cancellation support/avoid data race on resume
     SharedCoroutineWithTimer = tuple[finishAt: MonoTime, sharedCoro: SharedCoroutine]
 
     EvDispatcherObj = object
+        stopWhenEmpty: bool
         running: bool
         # Following need the pollLock.
         # Atomic not used for simpler code on avoiding object copy (elements changed at same time)
@@ -71,6 +63,8 @@ type
         ## But each thread can create and run its own unique dispatcher.
         ## All coroutines registered in the dispatcher will be run in the dispatcher thread.
         ## It's unsafe to interact with the dispatcher in another thread, at the exception of `registerExternCoros` proc
+    
+    DispatcherThread = tuple[dispatcher: EvDispatcher, thread: ref Thread[(int, EvDispatcher)]]
     
 const EvDispatcherTimeoutMs {.intdefine.} = 50 # We don't block on poll phase if new coros were registered
 const SleepMsIfInactive = 20 # to avoid busy waiting. When selector is not empty, but events triggered with no associated coroutines
@@ -233,11 +227,10 @@ proc runOnce(timeoutMs: int) =
 proc runEventLoop*(
         timeoutMs = -1,
         dispatcher = ActiveDispatcher,
-        stopWhenEmpty = BoolFlagRef(value: true)
+        stopWhenEmpty = true
     ) =
     ## run is done in same thread
     ## The same event loop cannot be run twice.
-    ## It is automatically run in another thread if `NimGoNoThread` is not set.
     ## If stopWhenEmpty is set to false with no timeout, it will run forever.
     ## Running forever can be useful when run a thread is dedicated to the event loop
     ## Two kinds of deadlocks can happen when stopWhenEmpty = true and no timeoutMs:
@@ -249,6 +242,7 @@ proc runEventLoop*(
         raise newException(ValueError, "Cannot run the same event loop twice")
     let timeout = TimeOutWatcher.init(timeoutMs)
     dispatcher[].running = true
+    dispatcher[].stopWhenEmpty = stopWhenEmpty
     DispatcherRunningInCurrentThread = true
     defer:
         dispatcher[].running = false
@@ -256,31 +250,35 @@ proc runEventLoop*(
         ActiveDispatcher = oldDispatcher
     while not timeout.expired:
         if dispatcher.isDispatcherEmpty():
-            if stopWhenEmpty.value:
+            if dispatcher[].stopWhenEmpty:
                 break
             else:
                 sleep(SleepMsIfEmpty)
         else:
             runOnce(timeout.getRemainingMs())
 
-when not defined(NimGoNoThread):
-    proc runEventLoopThreadImpl(args: (int, EvDispatcher, BoolFlagRef)) {.thread.} =
-        runEventLoop(args[0], args[1], args[2])
+when not defined(NimGoNoThreadSupport):
+    proc runEventLoopThreadImpl(args: (int, EvDispatcher)) {.thread.} =
+        runEventLoop(args[0], args[1], false)
         
     proc spawnEventLoop*(
             timeoutMs = -1,
             dispatcher = ActiveDispatcher,
-            stopWhenEmpty = BoolFlagRef(value: false),
-        ) =
+        ): DispatcherThread =
         ## eventLoop will run in its dedicated thread
-        ## An exit proc will be added to prevent the main thread to stop before the event lopo is empty
-        var EventLoopThread: Thread[(int, EvDispatcher, BoolFlagRef)]
-        createThread(EventLoopThread, runEventLoopThreadImpl, (-1, dispatcher, stopWhenEmpty))
-        addExitProc(proc() =
-            if getProgramResult() == 0 and dispatcher[].running:
-                stopWhenEmpty.value = true
-                joinThread(EventLoopThread)
-            )
+        ## Don't forget to call `waitAndExitEventLoop` or it will run forever
+        let dispatcherThreadRef = new Thread[(int, EvDispatcher)]
+        createThread(dispatcherThreadRef[], runEventLoopThreadImpl, (timeoutMs, dispatcher))
+        return (dispatcher, dispatcherThreadRef)
+
+    proc waitAndExitEventLoop*(dispatcherThread: DispatcherThread) =
+        dispatcherThread.dispatcher[].stopWhenEmpty = true
+        joinThread(dispatcherThread.thread[])
+
+    template withEventLoopThread*(body: untyped): untyped =
+        var dispatcherThread = spawnEventLoop()
+        `body`
+        waitAndExitEventLoop(dispatcherThread)
 
 proc running*(dispatcher = ActiveDispatcher): bool =
     dispatcher[].running
@@ -437,6 +435,3 @@ proc suspendUntilWrite*(fd: PollFd) =
     #if coro.isNil(): raise newException(ValueError, "Can only suspend inside a coroutine")
     addInsideSelector(fd, coro, Event.Write)
     suspend()
-
-when not defined(NimGoNoStart) and not defined(NimGoNoThread):
-    spawnEventLoop()

@@ -83,7 +83,7 @@ proc waitWithTimeout*(self: GoSemaphore, timeoutMs: int): bool =
     ## If waiter is a thread, we have no choice than to busywait
     let timeout = TimeOutWatcher.init(timeoutMs)
     if runningInsideDispatcher():
-        if fetchSub(self[].counter, 1, moRelaxed) > 0:
+        if fetchSub(self[].counter, 1) > 0:
             return true
         let currentCoro = getCurrentCoroutine()
         let currentSharedCoro = newSharedResource(currentCoro)

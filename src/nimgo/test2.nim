@@ -1,11 +1,9 @@
 import ./[coroutines, eventdispatcher]
 import ./public/gosemaphores
 
-import os
-import times
-import std/monotimes
+import std/[os, times, monotimes]
 
-proc main() =
+withEventLoopThread:
     var sem = newGoSemaphore()
     let t0 = getMonoTime()
     proc mainCoro() {.gcsafe.} =
@@ -16,5 +14,3 @@ proc main() =
     registerExternCoro(getCurrentThreadDispatcher(), coro)
     sleep(100)
     sem.signal()
-
-main()

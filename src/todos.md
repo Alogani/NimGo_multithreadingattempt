@@ -1,3 +1,5 @@
+_Short term tasks_
+
 # Bugs / Deceptive behaviours
 
 * addExitProc destroy global memory. Solutions:
@@ -6,6 +8,13 @@
     * Clean it up at each runOnce ?
     -> maybe need a custom heapqueue to maintain efficacity
 
+* NimGoNoThread not implemented
+
 # Next steps
 
-* Finish implementation of goAsync -> especially wait
+* Finish implementation of gotasks
+    * goAsync
+    * wait
+    * etc
+* add sleepAsync
+* Refactor asyncfile
